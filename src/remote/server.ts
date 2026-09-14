@@ -1,0 +1,324 @@
+import {createServer} from 'node:http'
+import {networkInterfaces} from 'node:os'
+import {WebSocketServer} from 'ws'
+import {addClient, removeClient, sendTo} from './broadcast.js'
+import {answerPrompt, publishNotify} from './bridge.js'
+import {getState, snapshot} from './session-state.js'
+import {isClientMessage} from './protocol.js'
+import type {ModelsMessage, SessionsMessage} from './protocol.js'
+import {swJs} from './sw.js'
+import {publicKey, addSubscription, getSubscriptions, logPush} from './push.js'
+import type {PushSubscriptionJSON} from './push.js'
+
+export interface LocalIPs {
+    /** Tailscale (tailscale0) IPv4 address, if the interface is up. */
+    tailscale?: string
+    /** First non-internal, non-Tailscale IPv4 address (the LAN address). */
+    lan?: string
+    /** Address used for the QR code / primary URL: Tailscale, else LAN, else loopback. */
+    primary: string
+}
+
+export interface AddressLine {
+    /** Network label (e.g. 'Tailscale', 'LAN'); empty for the loopback fallback. */
+    label: string
+    /** Full http:// URL for that address. */
+    url: string
+}
+
+export interface ServerHandle {
+    port: number
+    /** Primary address (Tailscale-preferred); the one the QR encodes. */
+    ip: string
+    /** All resolved addresses, for displaying both Tailscale and LAN URLs. */
+    ips: LocalIPs
+    stop(): void
+    onFirstConnect: (() => void) | null
+}
+
+type MessageCallback = (text: string) => void
+
+export function getLocalIPs(nets = networkInterfaces()): LocalIPs {
+    // Prefer Tailscale when available.
+    let tailscale: string | undefined
+    for (const net of nets['tailscale0'] ?? []) {
+        if (net.family === 'IPv4') {
+            tailscale = net.address
+            break
+        }
+    }
+    // LAN = first non-internal IPv4 that isn't the Tailscale interface.
+    let lan: string | undefined
+    for (const [name, iface] of Object.entries(nets)) {
+        if (!iface || name === 'tailscale0') continue
+        for (const net of iface) {
+            if (net.family === 'IPv4' && !net.internal) {
+                lan = net.address
+                break
+            }
+        }
+        if (lan) break
+    }
+    return {tailscale, lan, primary: tailscale ?? lan ?? '127.0.0.1'}
+}
+
+/** Build the labeled URL lines shown under the QR code. Both Tailscale and LAN
+ *  when present; a single unlabeled primary URL when neither resolves. The
+ *  Tailscale line uses the MagicDNS host when known — it resolves to the same
+ *  node as the raw IP, but it is the name `tailscale cert` and the https URL in
+ *  tailscale.ts are issued for — falling back to the raw IP. */
+export function formatAddresses(ips: LocalIPs, port: number, tsHost?: string): AddressLine[] {
+    const out: AddressLine[] = []
+    if (tsHost) out.push({label: 'Tailscale', url: `http://${tsHost}:${port}`})
+    else if (ips.tailscale) out.push({label: 'Tailscale', url: `http://${ips.tailscale}:${port}`})
+    if (ips.lan) out.push({label: 'LAN', url: `http://${ips.lan}:${port}`})
+    if (out.length === 0) out.push({label: '', url: `http://${ips.primary}:${port}`})
+    return out
+}
+
+/** Bind the REAL `server` to the first free port at or above `start`, trying up
+ *  to `max` consecutive ports. On EADDRINUSE we bump the port and re-listen; any
+ *  other error (e.g. EACCES), or exhausting the range, REJECTS the promise —
+ *  never throws uncaught.
+ *
+ *  Binding the real server directly (rather than probing a throwaway socket with
+ *  createServer()/listen()/close() first, then binding the real one) removes a
+ *  TOCTOU race: between "probe says port free" and "real listen" the port can be
+ *  taken — including by the probe's own socket, if the runtime has not released
+ *  it yet — so the real bind hits EADDRINUSE on the very port that just tested
+ *  free. With no 'error' listener on the real server that escapes as an
+ *  uncaughtException and takes pi down; that is issue #7. Retrying the real bind
+ *  has no probe and no window. */
+export function listenWithRetry(
+    server: import('node:http').Server,
+    start: number,
+    max: number
+): Promise<number> {
+    return new Promise((resolve, reject) => {
+        let port = start
+        // Persistent 'listening'/'error' listeners (not one-shot listen(cb)):
+        // under Bun, a listen(port, host, cb) callback from a FAILED first bind
+        // is NOT carried over to a later listen() retry, so it never fires — the
+        // retry silently hangs. Registering both via .on() and re-calling
+        // listen(port) with no callback routes each attempt's outcome correctly
+        // on both Bun and Node.
+        const cleanup = () => {
+            server.removeListener('error', onError)
+            server.removeListener('listening', onListening)
+        }
+        const onListening = () => {
+            cleanup()
+            resolve(port)
+        }
+        const onError = (err: NodeJS.ErrnoException) => {
+            if (err.code === 'EADDRINUSE' && port < start + max - 1) {
+                port++
+                server.listen(port, '0.0.0.0')
+                return
+            }
+            cleanup()
+            reject(
+                err.code === 'EADDRINUSE' ?
+                    new Error(`No free port found in range ${start}–${start + max - 1}`)
+                :   err
+            )
+        }
+        server.on('error', onError)
+        server.on('listening', onListening)
+        server.listen(port, '0.0.0.0')
+    })
+}
+
+export async function startServer(
+    onMessage: MessageCallback,
+    getHtml: (wsUrl: string) => string,
+    onInterrupt?: () => void,
+    onClearHeld?: () => void,
+    onSetModel?: (spec: string) => void,
+    /** Fresh model catalogue for the picker, read at connect time. Returning
+     *  null (no live ctx yet) just omits the frame. */
+    getModels?: () => ModelsMessage | null,
+    /** Fresh session list for the sidebar: sent on connect, on list_sessions
+     *  (drawer opened), and after a switch re-marks the current row. May be
+     *  async (the scan reads every session file). Returning null omits it. */
+    getSessions?: () => SessionsMessage | null | Promise<SessionsMessage | null>,
+    /** Switch the active session (browser sidebar pick). */
+    onSwitchSession?: (path: string) => void,
+    /** Delete a persisted session (browser sidebar trash). The callback owns
+     *  every check (current-session guard, scan allow-list) and every
+     *  consequence (file removal, list refresh, user-facing notice). */
+    onDeleteSession?: (path: string) => void
+): Promise<ServerHandle> {
+    const ips = getLocalIPs()
+    const ip = ips.primary
+    // The bound port isn't known until listenWithRetry succeeds, and wsUrl
+    // depends on it. The request handler only ever runs once the server is
+    // listening (real client I/O, long after we set wsUrl below), so reading it
+    // lazily from this closure variable is safe.
+    let wsUrl = ''
+
+    const httpServer = createServer((req, res) => {
+        if (req.method === 'GET' && (req.url === '/' || req.url === '')) {
+            const body = getHtml(wsUrl)
+            res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'})
+            res.end(body)
+        } else if (req.method === 'GET' && req.url === '/sw.js') {
+            res.writeHead(200, {'Content-Type': 'text/javascript; charset=utf-8'})
+            res.end(swJs())
+        } else if (req.method === 'GET' && req.url === '/push-key') {
+            res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'})
+            res.end(publicKey())
+        } else if (req.method === 'POST' && req.url === '/subscribe') {
+            const chunks: Buffer[] = []
+            req.on('data', c => chunks.push(c as Buffer))
+            req.on('end', () => {
+                try {
+                    const sub = JSON.parse(Buffer.concat(chunks).toString()) as PushSubscriptionJSON
+                    if (!sub || typeof sub.endpoint !== 'string') throw new Error('no endpoint')
+                    addSubscription(sub)
+                    logPush(
+                        `subscribe ${new URL(sub.endpoint).host} (total ${getSubscriptions().length})`
+                    )
+                    res.writeHead(201)
+                    res.end('ok')
+                } catch {
+                    logPush('subscribe REJECTED (malformed body)')
+                    res.writeHead(400)
+                    res.end('bad subscription')
+                }
+            })
+        } else {
+            res.writeHead(404)
+            res.end('Not found')
+        }
+    })
+
+    // Track every accepted TCP socket so stop() can forcibly destroy lingering
+    // keep-alive / WebSocket connections. Without this, httpServer.close() only
+    // stops accepting new connections and waits for existing ones to drain — an
+    // open browser tab never drains, so the listening server and its sockets
+    // stay as active event-loop handles forever. In print mode pi exits by
+    // natural event-loop drain: main.js sets `process.exitCode` and returns with
+    // no process.exit(), unlike the package-command path right above it which
+    // calls process.exit precisely so a bad extension cannot keep a one-shot
+    // command alive. Terminating clients and destroying sockets here is what
+    // lets the loop drain at all.
+    const sockets = new Set<import('node:net').Socket>()
+    httpServer.on('connection', s => {
+        sockets.add(s)
+        s.on('close', () => sockets.delete(s))
+    })
+
+    // Bind the real server now, retrying past any in-use ports. A bind failure
+    // REJECTS (see listenWithRetry) — register.ts's callers catch it and let pi
+    // continue without the remote UI; the remote server is optional.
+    const port = await listenWithRetry(httpServer, 8800, 100)
+    wsUrl = `ws://${ip}:${port}/ws`
+
+    // Attach the WebSocket server only AFTER the http server is bound. ws adds an
+    // 'error' listener to the http server that re-emits on the WebSocketServer
+    // (which has no error listener) — so if it were attached during the bind, an
+    // EADDRINUSE on the first port would be forwarded to wss and thrown as an
+    // uncaughtException, crashing pi even though listenWithRetry handled it. ws
+    // works fine on an already-listening server.
+    const wss = new WebSocketServer({server: httpServer, path: '/ws'})
+
+    const handle: ServerHandle = {
+        port,
+        ip,
+        ips,
+        onFirstConnect: null,
+        stop() {
+            // Terminate WebSocket clients (immediate close, no drain), then
+            // destroy any remaining raw sockets, then close the servers so the
+            // event loop has no lingering handles holding the process open.
+            for (const ws of wss.clients) ws.terminate()
+            wss.close()
+            for (const s of sockets) s.destroy()
+            sockets.clear()
+            httpServer.close()
+            httpServer.closeAllConnections?.()
+        }
+    }
+
+    wss.on('connection', ws => {
+        addClient(ws)
+        handle.onFirstConnect?.()
+        handle.onFirstConnect = null
+        // One authoritative snapshot — the client replaces its whole view with it.
+        sendTo(ws, snapshot())
+        // The switchable-model list rides alongside: the snapshot carries the
+        // current model's NAME for the chip; this frame feeds the picker menu.
+        const models = getModels?.()
+        if (models) sendTo(ws, models)
+        // And the session sidebar's data (async — the scan reads session files).
+        void Promise.resolve(getSessions?.())
+            .then(sessions => {
+                if (sessions && ws.readyState === ws.OPEN) sendTo(ws, sessions)
+            })
+            .catch(() => {})
+
+        ws.on('message', data => {
+            let msg: unknown
+            try {
+                msg = JSON.parse(data.toString())
+            } catch {
+                return // ignore malformed JSON
+            }
+            if (!isClientMessage(msg)) return
+            // Every branch below calls back into pi (extension APIs, bridge
+            // commands, SessionState). A throw that escapes here reaches pi's
+            // uncaughtException handler and KILLS the agent — the remote is an
+            // optional surface and must never take the host down, so any
+            // handler error degrades to a toast on the browser that sent it.
+            try {
+                if (msg.type === 'interrupt') {
+                    onInterrupt?.()
+                    return
+                }
+                if (msg.type === 'prompt_answer') {
+                    answerPrompt(msg.id, msg.value)
+                    return
+                }
+                if (msg.type === 'clear_held') {
+                    onClearHeld?.()
+                    return
+                }
+                if (msg.type === 'set_model') {
+                    onSetModel?.(msg.spec)
+                    return
+                }
+                if (msg.type === 'list_sessions') {
+                    // Drawer opened — refresh the list (it may have gone stale
+                    // since connect). Async scan; guarded like the connect path.
+                    void Promise.resolve(getSessions?.())
+                        .then(sessions => {
+                            if (sessions && ws.readyState === ws.OPEN) sendTo(ws, sessions)
+                        })
+                        .catch(() => {})
+                    return
+                }
+                if (msg.type === 'switch_session') {
+                    onSwitchSession?.(msg.path)
+                    return
+                }
+                if (msg.type === 'delete_session') {
+                    onDeleteSession?.(msg.path)
+                    return
+                }
+                // type === 'message': ignore while a prompt is pending (composer is
+                // disabled in the browser; this is the server-side guard).
+                if (getState().prompt) return
+                onMessage(msg.text)
+            } catch (err) {
+                publishNotify(`Remote handler failed: ${(err as Error).message}`, 'error')
+            }
+        })
+
+        ws.on('close', () => {
+            removeClient(ws)
+        })
+    })
+
+    return handle
+}

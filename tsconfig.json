@@ -1,0 +1,29 @@
+{
+    "compilerOptions": {
+        "lib": ["ESNext"],
+        "target": "ESNext",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noImplicitReturns": true,
+        "noImplicitOverride": true,
+        "noFallthroughCasesInSwitch": true,
+        "verbatimModuleSyntax": true,
+        "esModuleInterop": true,
+        "skipLibCheck": true,
+        "forceConsistentCasingInFileNames": true,
+        "resolveJsonModule": true,
+        "isolatedModules": true,
+        "declaration": true,
+        "outDir": "dist",
+        // Only tsconfig.build.json emits. A bare `tsc` type-checks src AND test,
+        // so letting it write would scatter dist/src + dist/test over the
+        // dist/remote/register.js that package.json `main` names.
+        "noEmit": true,
+        "types": ["bun-types"]
+    },
+    "include": ["src", "test"],
+    "exclude": ["node_modules", "dist", "test/**/__fixtures__"]
+}
