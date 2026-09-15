@@ -3,8 +3,8 @@
     "version": "0.1.0",
     "description": "Material Design remote-control web view for pi — real-time WebSocket server, session sidebar, web push, and an mdui/M3 WebUI, extracted from pi-task.",
     "type": "module",
-    "main": "./dist/remote/register.js",
-    "types": "./dist/remote/register.d.ts",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
     "files": [
         "dist"
     ],
@@ -48,5 +48,8 @@
         "mdui"
     ],
     "author": "mjasnikovs <mjasnikovs@googlemail.com>",
-    "license": "AGPL-3.0-only"
+    "license": "AGPL-3.0-only",
+    "pi": {
+        "extensions": ["dist/index.js"]
+    }
 }
