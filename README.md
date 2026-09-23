@@ -19,7 +19,7 @@
 
 > **Root upstream — [mjasnikovs/pi-task](https://github.com/mjasnikovs/pi-task):** the original, most-upstream project. It is the reference implementation that first shipped the Web UI this repository extracts. The entire lineage below traces back to it.
 
-This repository is **Sam-Fic's standalone extraction** of the remote-control web UI. It was lifted out of **a fork**, [Sam-Fic/pi-task](https://github.com/Sam-Fic/pi-task) — which itself forks the root upstream above. It carries the same **Material Design 3 Expressive** redesign described below — that redesign is the headline change and the reason this code exists.
+This repository is a standalone extraction of the remote-control web UI. It was lifted out of **a fork**, [Sam-Fic/pi-task](https://github.com/Sam-Fic/pi-task) — which itself forks the root upstream above. It carries the same **Material Design 3 Expressive** redesign described below — that redesign is the headline change and the reason this code exists.
 
 `pi-remote` was split out of `pi-task` as an independent pi extension that does exactly one thing: the browser / phone remote-control surface. The full lineage, from the most-upstream source down to this repo:
 
