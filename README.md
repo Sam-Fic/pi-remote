@@ -1,6 +1,6 @@
 <div align="center">
 
-![pi-remote — Material Design 3 Expressive remote-control web view for pi, with session sidebar, chat bubbles, code blocks, thinking/tool cards, command suggestions, model & theme pickers, and a QR connect overlay.](./assets/remote-ui-preview.png)
+<img src="./assets/remote-ui-preview.png" alt="pi-remote — Material Design 3 Expressive remote-control web view for pi, with session sidebar, chat bubbles, code blocks, thinking/tool cards, command suggestions, model & theme pickers, and a QR connect overlay." height="400">
 
 # pi-remote
 
