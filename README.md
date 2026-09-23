@@ -92,11 +92,13 @@ npm run build        # emits dist/ (see tsconfig.build.json)
 pi install <path-to-pi-remote>
 ```
 
-Once published, install it like any other pi extension:
+Once it is published to npm, install it as a normal pi extension by its package name:
 
 ```sh
-pi install npm:@mjasnikovs/pi-remote
+pi install npm:<scope>/pi-remote
 ```
+
+(substitute your npm scope; this repository is not published yet — until then use the local build + `pi install <path-to-pi-remote>` above.)
 
 > The remote UI server is toggled by the extension's `remote` config flag (mirrors `pi-task`'s `/task-config` → *remote control*). Enable it and run `/remote` to pop the QR code and connection URLs.
 
