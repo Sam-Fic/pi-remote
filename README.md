@@ -17,13 +17,15 @@
 
 ## Origin & fork context
 
-> This repository is **Sam-Fic's standalone extraction** of the remote-control web UI from [Sam-Fic/pi-task](https://github.com/Sam-Fic/pi-task). It carries the same **Material Design 3 Expressive** redesign described below — that redesign is the headline change and the reason this code exists.
+> **Root upstream — [mjasnikovs/pi-task](https://github.com/mjasnikovs/pi-task):** the original, most-upstream project. It is the reference implementation that first shipped the Web UI this repository extracts. The entire lineage below traces back to it.
 
-`pi-remote` was split out of `pi-task` as an independent pi extension that does exactly one thing: the browser / phone remote-control surface. The lineage:
+This repository is **Sam-Fic's standalone extraction** of the remote-control web UI. It was lifted out of **my own fork** [Sam-Fic/pi-task](https://github.com/Sam-Fic/pi-task) — which itself forks the root upstream above. It carries the same **Material Design 3 Expressive** redesign described below — that redesign is the headline change and the reason this code exists.
 
-- **[mjasnikovs/pi-task](https://github.com/mjasnikovs/pi-task)** — the upstream project. It is the reference implementation that first shipped the Web UI this repository extracts.
-- **[Sam-Fic/pi-task](https://github.com/Sam-Fic/pi-task)** — my fork of the above. Its main change is that it **replaced the legacy remote web UI with a Material Design 3 Expressive interface** (built on [M3E / mdui](https://matraic.github.io/m3e)).
-- **Sam-Fic/pi-remote** (this repo) — the remote WebUI lifted out of that fork into its own extension, so it can be installed, updated, and versioned independently of the task pipeline that still lives in `pi-task`.
+`pi-remote` was split out of `pi-task` as an independent pi extension that does exactly one thing: the browser / phone remote-control surface. The full lineage, from the most-upstream source down to this repo:
+
+- **[mjasnikovs/pi-task](https://github.com/mjasnikovs/pi-task)** — **the original / most-upstream project.** The reference implementation that first shipped the Web UI this repository extracts. This is the root of the whole lineage; nothing here predates it.
+- **[Sam-Fic/pi-task](https://github.com/Sam-Fic/pi-task)** — **my own fork** of the above. Its main change is that it **replaced the legacy remote web UI with a Material Design 3 Expressive interface** (built on [M3E / mdui](https://matraic.github.io/m3e)).
+- **Sam-Fic/pi-remote** (this repo) — **my own** extraction of the remote WebUI, lifted out of that fork into its own extension, so it can be installed, updated, and versioned independently of the task pipeline that still lives in `pi-task`.
 
 Keeping the remote UI separate means the Material 3 Expressive surface can evolve on its own track without dragging the orchestration code along.
 
