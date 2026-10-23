@@ -16,7 +16,7 @@
 import {broadcast as wsBroadcast} from './broadcast.js'
 import {HistoryBuffer} from './history.js'
 import type {Turn, Part, ToolPart} from './history.js'
-import type {ContextUsage, PromptMessage, WidgetData} from './protocol.js'
+import type {AttachmentInfo, ContextUsage, PromptMessage, WidgetData} from './protocol.js'
 
 export interface LiveTurn {
     /** Ordered assistant content — text, thinking and tool parts — for this run. */
@@ -219,8 +219,13 @@ export function agentEnd(context: ContextUsage, model?: string): void {
     s.sink({type: 'agent_end', contextUsage: context, model: s.model})
 }
 
-export function addUserTurn(text: string): void {
+export function addUserTurn(text: string, attachments?: AttachmentInfo[]): void {
     const s = getState()
+    if (attachments && attachments.length > 0) {
+        s.history.addUserMessage(text, attachments)
+        s.sink({type: 'user_message', text, attachments})
+        return
+    }
     s.history.addUserMessage(text)
     s.sink({type: 'user_message', text})
 }

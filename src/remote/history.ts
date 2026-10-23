@@ -1,3 +1,5 @@
+import type {AttachmentInfo} from './protocol.js'
+
 // An assistant turn is an ORDERED list of parts — text segments and tool calls
 // interleaved exactly as they happened — so the remote transcript reproduces the
 // terminal's layout instead of collapsing a whole run into one text blob.
@@ -33,6 +35,8 @@ export interface Turn {
     role: 'user' | 'assistant' | 'system'
     /** User text, error text, or a system note. Assistant content lives in `parts`. */
     text?: string
+    /** Files the user attached to a user turn (absent for plain text). */
+    attachments?: AttachmentInfo[]
     /** Ordered assistant content — text, thinking and tool parts, interleaved. */
     parts?: Part[]
     error?: boolean
@@ -48,8 +52,12 @@ export class HistoryBuffer {
         this.limit = limit
     }
 
-    addUserMessage(text: string): void {
-        this._push({role: 'user', text})
+    addUserMessage(text: string, attachments?: AttachmentInfo[]): void {
+        this._push(
+            attachments && attachments.length > 0 ?
+                {role: 'user', text, attachments}
+            :   {role: 'user', text}
+        )
     }
 
     addAssistantTurn(parts: Part[]): void {

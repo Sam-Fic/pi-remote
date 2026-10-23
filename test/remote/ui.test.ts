@@ -215,7 +215,7 @@ describe('mduiHtml()', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
         expect(out).toContain('function renderMarkdown')
         // addBubble markdown-renders only the assistant role.
-        const m = out.match(/function addBubble\(role, text\) \{[\s\S]*?\n {4}\}/)
+        const m = out.match(/function addBubble\(role, text, attachments\) \{[\s\S]*?\n {4}\}/)
         expect(m).not.toBeNull()
         expect(m![0]).toContain("role === 'assistant'")
         expect(m![0]).toContain('textContent = text')

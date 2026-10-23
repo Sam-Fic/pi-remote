@@ -18,8 +18,9 @@ import {
 import {setupEvents} from './events.js'
 import {seedFromSession} from './backfill.js'
 import {deleteSessionFile, listSessionSummaries, withCurrentSession} from './sessions.js'
-import {reset, addUserTurn, setHeld, getState} from './session-state.js'
+import {reset, addUserTurn, setHeld, getState, addSystemNote} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
+import {attachmentRefs} from './uploads.js'
 import {resolveModel, specOf} from '../shared/model-resolve.js'
 import type {ModelsMessage, SessionsMessage} from './protocol.js'
 import {qrLines} from './qr.js'
@@ -39,6 +40,7 @@ import {
     setHeldInputListener
 } from '../task/mid-run-input.js'
 import type {ServerHandle} from './server.js'
+import type {AttachmentBatch} from './attachments.js'
 
 // Shared state parked on globalThis. pi loads extensions through
 // `createJiti(..., {moduleCache: false})`, so a reload re-evaluates this module
@@ -46,7 +48,9 @@ import type {ServerHandle} from './server.js'
 // keeps the server running and messages flowing.
 type Shared = {
     server: ServerHandle | null
-    send: ((text: string, opts?: {deliverAs: 'steer' | 'followUp'}) => void) | null
+    /** Sends to the live session. Takes a content array as well as text: an
+     *  attachment line is `[text, image, …]` (see attachments.ts). */
+    send: ((content: Parameters<ExtensionAPI['sendUserMessage']>[0], opts?: {deliverAs: 'steer' | 'followUp'}) => void) | null
     serveResult: ServeResult | null
     /**
      * The newest ExtensionAPI. The server outlives every registration (globalThis
@@ -110,6 +114,52 @@ export function routePlainLine(
     }
 }
 
+/**
+ * Deliver one browser line that may carry attachments.
+ *
+ * `routePlainLine` stays the single decision for WHERE a plain line goes; this
+ * is the same three-way split with attachments in hand:
+ *
+ *   - a line held for the next task turn keeps its file PATHS. The pipeline's
+ *     next turn is a string, so paths are what survives that trip;
+ *   - a live turn is steered with real image blocks, so a screenshot pushed
+ *     mid-run reaches the model in that same turn;
+ *   - an idle session gets a content array via `sendUserMessage`.
+ *
+ * A line whose text is empty but which carries files is a real message ("here
+ * is this"), so the transcript says so instead of leaving a blank bubble.
+ */
+async function deliverBrowserLine(
+    text: string,
+    batch: AttachmentBatch | undefined,
+    send: ((content: Parameters<ExtensionAPI['sendUserMessage']>[0], opts?: {deliverAs: 'steer' | 'followUp'}) => void) | null
+): Promise<void> {
+    const display = text.trim() || (batch && batch.info.length > 0 ? defaultAttachmentText(batch) : '')
+    if (!send) {
+        addSystemNote('Remote input dropped: no live session.')
+        return
+    }
+    addUserTurn(display, batch?.info)
+    if (isRunActive() && !getState().agentRunning) {
+        // Held for the next task turn. The paths go in as text rather than as
+        // image blocks: the pipeline composes that turn itself, and a string is
+        // all it can carry — the agent then `read`s the files it needs.
+        holdInput(text.trim(), batch?.files.map(f => f.path))
+        return
+    }
+    const {buildUserContent} = await import('./attachments.js')
+    // The paths are folded into the TEXT block as well as the images riding
+    // inline, so a non-vision model (or a later turn) can still `read` them.
+    const content = batch ? await buildUserContent(display, batch) : display
+    if (getState().agentRunning) send(content, {deliverAs: 'steer'})
+    else send(content)
+}
+
+function defaultAttachmentText(batch: AttachmentBatch): string {
+    const n = batch.info.length
+    return n === 1 ? `(attached: ${batch.info[0]!.name})` : `(attached ${n} files)`
+}
+
 export function registerRemote(pi: ExtensionAPI): void {
     // This generation's API. Every session replacement (newSession/fork/
     // switchSession) and every reload rebuilds the extension runner and lands
@@ -167,7 +217,7 @@ export function registerRemote(pi: ExtensionAPI): void {
     async function ensureServer(): Promise<ServerHandle> {
         if (S.server) return S.server
         S.server = await startServer(
-            text => {
+            (text, attachments) => {
                 if (text === '/new') {
                     // The reset inside a new session clears the browser's prompt
                     // card, so a parked ask has lost its last surface. Only HERE:
@@ -192,9 +242,38 @@ export function registerRemote(pi: ExtensionAPI): void {
                     })
                     return
                 }
-                dispatchRemoteLine(text, {
-                    onPlain: plain => routePlainLine(plain, (t, opts) => S.send?.(t, opts))
-                })
+                // A slash command is text-only by design: /task & co. parse their
+                // argument string, and an attachment has no meaning there. The
+                // line is dispatched exactly as before and the files are named in
+                // the transcript so they are still findable.
+                if (text.startsWith('/')) {
+                    dispatchRemoteLine(text, {onPlain: () => {}})
+                    if (attachments && attachments.info.length > 0) {
+                        // Named, not attached: the command parsed only its
+                        // argument string, so saying so is what keeps the file
+                        // findable instead of silently discarded.
+                        addSystemNote(
+                            `${attachmentRefs(attachments.files).trim()}\n` +
+                                '(slash commands take text only — ' +
+                                (attachments.info.length > 1 ?
+                                    'these files were not attached'
+                                :   'this file was not attached') +
+                                ')'
+                        )
+                    }
+                    return
+                }
+                if (!attachments || attachments.info.length === 0) {
+                    // The plain, attachment-free path is untouched: routePlainLine
+                    // stays the one owner of "steer / hold / send".
+                    dispatchRemoteLine(text, {
+                        onPlain: plain => routePlainLine(plain, (t, opts) => S.send?.(t, opts))
+                    })
+                    return
+                }
+                void deliverBrowserLine(text, attachments, (content, opts) =>
+                    S.send?.(content, opts)
+                )
             },
             wsUrl => html(wsUrl),
             interruptAgent,

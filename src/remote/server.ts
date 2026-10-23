@@ -7,6 +7,8 @@ import {getState, snapshot} from './session-state.js'
 import {isClientMessage} from './protocol.js'
 import type {ModelsMessage, SessionsMessage} from './protocol.js'
 import {swJs} from './sw.js'
+import {handleServeUpload, handleUploadRequest, resolveUploads} from './uploads.js'
+import type {AttachmentInfo} from './protocol.js'
 import {publicKey, addSubscription, getSubscriptions, logPush} from './push.js'
 import type {PushSubscriptionJSON} from './push.js'
 
@@ -36,7 +38,10 @@ export interface ServerHandle {
     onFirstConnect: (() => void) | null
 }
 
-type MessageCallback = (text: string) => void
+type MessageCallback = (
+    text: string,
+    attachments?: {info: AttachmentInfo[]; files: import('./uploads.js').UploadedFile[]}
+) => void
 
 export function getLocalIPs(nets = networkInterfaces()): LocalIPs {
     // Prefer Tailscale when available.
@@ -168,6 +173,12 @@ export async function startServer(
         } else if (req.method === 'GET' && req.url === '/push-key') {
             res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'})
             res.end(publicKey())
+        } else if (req.method === 'GET' && req.url?.startsWith('/uploads/')) {
+            // Files the composer uploaded. Immutable + id-addressed, so the
+            // browser can cache a thumbnail for the life of the page.
+            handleServeUpload(res, req.url.slice('/uploads/'.length).split('?')[0]!)
+        } else if (req.method === 'POST' && req.url?.startsWith('/upload')) {
+            handleUploadRequest(req, res)
         } else if (req.method === 'POST' && req.url === '/subscribe') {
             const chunks: Buffer[] = []
             req.on('data', c => chunks.push(c as Buffer))
@@ -309,7 +320,30 @@ export async function startServer(
                 // type === 'message': ignore while a prompt is pending (composer is
                 // disabled in the browser; this is the server-side guard).
                 if (getState().prompt) return
-                onMessage(msg.text)
+                const ids = msg.attachments ?? []
+                if (ids.length === 0) {
+                    onMessage(msg.text)
+                    return
+                }
+                // Attachments are resolved asynchronously (a reload may need to
+                // re-stat the files), so the line is delivered once their real
+                // paths are known. An id that no longer exists is dropped; the
+                // text still goes through rather than being swallowed.
+                void resolveUploads(ids)
+                    .then(files =>
+                        onMessage(msg.text, {
+                            info: files.map(f => ({
+                                id: f.id,
+                                name: f.name,
+                                kind: f.kind,
+                                mimeType: f.mimeType,
+                                size: f.size,
+                                url: f.url
+                            })),
+                            files
+                        })
+                    )
+                    .catch(() => onMessage(msg.text))
             } catch (err) {
                 publishNotify(`Remote handler failed: ${(err as Error).message}`, 'error')
             }

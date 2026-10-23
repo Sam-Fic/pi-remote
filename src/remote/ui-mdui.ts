@@ -1027,11 +1027,129 @@ m3e-shape.avatar .avatar-fill.error {
 /* Circle fallback while the shape module is still loading. */
 m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
 #input-bar {
-    display: flex; gap: 0.5rem; align-items: flex-end;
+    display: flex; flex-direction: column; gap: 0.5rem;
+    align-items: stretch;
     padding: 0.75rem var(--col-pad) calc(var(--safe-bottom) + 1rem);
     background: var(--md-sys-color-surface-container);
     width: 100%;
     box-sizing: border-box;
+}
+/* The row that used to BE #input-bar: clip + field + autosize + send. */
+#composer-row {
+    display: flex; gap: 0.5rem; align-items: flex-end;
+    width: 100%;
+}
+/* Paperclip: a tonal circle sitting on the send capsule's baseline, so the row
+   still reads as "one loud action" (send) with attach as support. */
+m3e-icon-button#attach-btn {
+    align-self: flex-end;
+    margin-bottom: 0.25rem;
+}
+m3e-icon-button#attach-btn:disabled {
+    opacity: 0.38;
+}
+/* Drag-and-drop affordance: the whole footer lifts to primary-container while
+   files are hovering over it. */
+#input-bar.dragging {
+    background: var(--md-sys-color-primary-container);
+    outline: 2px dashed var(--md-sys-color-primary);
+    outline-offset: -6px;
+}
+#input-bar.dragging::after {
+    content: '松开以添加附件';
+    position: absolute;
+    inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--md-sys-color-on-primary-container);
+    font-weight: 600; font-size: 0.9rem;
+    pointer-events: none;
+    background: color-mix(in srgb, var(--md-sys-color-primary-container) 88%, transparent);
+}
+/* Attachment tray: a horizontal strip of chips/thumbnails above the field. */
+#attach-tray {
+    display: none;
+    gap: 0.5rem;
+    align-items: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+}
+#attach-tray.show { display: flex; }
+#attach-tray::-webkit-scrollbar { display: none; }
+.attach-chip {
+    position: relative;
+    display: flex; align-items: center; gap: 0.4rem;
+    flex: 0 0 auto;
+    max-width: 11rem;
+    padding: 0.35rem 2rem 0.35rem 0.6rem;
+    border-radius: var(--md-sys-shape-corner-large);
+    background: var(--md-sys-color-surface-container-highest);
+    color: var(--md-sys-color-on-surface);
+    font-size: 0.8rem;
+    line-height: 1.2;
+}
+.attach-chip .attach-name {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.attach-chip .attach-size {
+    color: var(--md-sys-color-on-surface-variant);
+    font-size: 0.72rem;
+    flex: 0 0 auto;
+}
+.attach-chip.thumb {
+    width: 4.5rem; height: 4.5rem;
+    padding: 0;
+    justify-content: center;
+    background: transparent;
+}
+.attach-chip.thumb img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    border-radius: var(--md-sys-shape-corner-large);
+    display: block;
+}
+.attach-chip .attach-remove {
+    position: absolute;
+    top: .1rem; right: .1rem;
+    width: 1.4rem; height: 1.4rem;
+    min-width: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    box-shadow: 0 1px 3px rgba(0,0,0,.35);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; line-height: 1;
+    padding: 0;
+}
+.attach-chip .attach-remove:hover { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
+.attach-chip.uploading { opacity: 0.6; }
+/* Attachments inside a committed user bubble. */
+.bubble .bubble-attachments {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+.bubble .bubble-attachments:first-child { margin-top: 0; }
+.bubble .bubble-attachments a {
+    display: flex; align-items: center; gap: 0.35rem;
+    max-width: 14rem;
+    padding: 0.25rem 0.55rem;
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 8%, transparent);
+    color: inherit; text-decoration: none;
+    font-size: 0.8rem;
+}
+.bubble .bubble-attachments a:hover { text-decoration: underline; }
+.bubble .bubble-attachments a .fname {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bubble .bubble-attachments img {
+    display: block;
+    max-width: min(18rem, 100%);
+    max-height: 14rem;
+    border-radius: var(--md-sys-shape-corner-medium);
 }
 /* The filled variant reserves the floating-label row at the TOP of its content
    box (24px) while .base keeps only 8px below the text. This field has no label,
@@ -1055,7 +1173,7 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
    host ~60px and lets the stretched send button sit flush with the visible
    field. Density is left at default on purpose: density:-3 had shrunk the
    VISIBLE field to 44px, which looked too short. Scoped to this host only. */
-#input-bar > m3e-form-field { flex: 1 1 auto; min-width: 0; --md-sys-typescale-body-small-line-height: 0px; }
+#composer-row > m3e-form-field { flex: 1 1 auto; min-width: 0; --md-sys-typescale-body-small-line-height: 0px; }
 /* Expressive send button: a filled primary circle — the composer's one
    loud accent. send<->stop swings 90deg on the spring token; running/armed
    retarget the primary tokens to the error palette (armed is full error). */
@@ -1590,11 +1708,20 @@ export function mduiHtml(wsUrl: string): string {
 
     <footer id="input-bar" style="position:relative;">
       <div id="cmd-suggestions"></div>
-      <m3e-form-field variant="filled">
-        <textarea id="input" placeholder="输入消息（/ 查看命令）…" rows="1" disabled></textarea>
-      </m3e-form-field>
-      <m3e-textarea-autosize for="input" min-rows="1" max-rows="6"></m3e-textarea-autosize>
-      <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
+      <!-- Attachments waiting to be sent. Sits directly above the composer and
+           shares its width, so a thumbnail row reads as part of the field. -->
+      <div id="attach-tray" aria-live="polite"></div>
+      <div id="composer-row">
+        <!-- Paperclip: opens the picker. Doubles as the drop-target hint when
+             drag-and-drop is in progress (see #input-bar.dragging). -->
+        <m3e-icon-button id="attach-btn" variant="tonal" aria-label="添加附件" title="添加图片或文件" disabled><m3e-icon name="attach_file"></m3e-icon></m3e-icon-button>
+        <input type="file" id="attach-input" multiple hidden>
+        <m3e-form-field variant="filled">
+          <textarea id="input" placeholder="输入消息（/ 查看命令）…" rows="1" disabled></textarea>
+        </m3e-form-field>
+        <m3e-textarea-autosize for="input" min-rows="1" max-rows="6"></m3e-textarea-autosize>
+        <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
+      </div>
     </footer>
       </div><!-- /main-col -->
     </m3e-drawer-container>
@@ -1705,6 +1832,10 @@ function stage0Logic(wsUrl: string): string {
     if (topBar && 'control' in topBar) { try { topBar.control = chatLog; } catch (_) {} }
     const inputEl      = document.getElementById('input');
     const sendBtn      = document.getElementById('send-btn');
+    const inputBar     = document.getElementById('input-bar');
+    const attachBtn    = document.getElementById('attach-btn');
+    const attachInput  = document.getElementById('attach-input');
+    const attachTray   = document.getElementById('attach-tray');
     const ctxBar       = document.getElementById('ctx-bar');
     const ctxFlat      = document.getElementById('ctx-bar-flat');
     const ctxStack     = document.getElementById('ctx-stack');
@@ -1758,6 +1889,11 @@ function stage0Logic(wsUrl: string): string {
     let turnHadContent = false;
     let activePromptId = null;
     let activeRecommended = '', activeRecommended2 = '', activeActions = [];
+    /* Attachments picked but not yet sent. Each entry is either a finished
+       upload ({id, name, kind, mimeType, size, url}) or an upload in flight
+       ({localId, name, pending:true}) so a big file shows up immediately. */
+    let pendingAttachments = [];
+    const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
     let cancelArmTimer = null;
     let stopArmed = false, stopArmTimer = null;
     let notifHistory = [];
@@ -1823,7 +1959,14 @@ function stage0Logic(wsUrl: string): string {
         // The session drawer's per-row delete button. Paths from
         // @material-design-icons/svg (delete), same 24×24 grid as the rest.
         delete: ['M16 9v10H8V9h8m-1.5-6h-5l-1 1H5v2h14V4h-3.5l-1-1zM18 7H6v12c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7z',
-                 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z']
+                 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'],
+        // The composer's paperclip. Paths from @material-design-icons/svg
+        // (attach_file), same 24×24 grid as the rest.
+        attach_file: ['M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z',
+                      'M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z'],
+        // A generic file chip (draft / insert_drive_file).
+        description: ['M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
+                      'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z']
       };
       for (const name in iconPaths) {
         m.registerIcon(name, 'outlined', {
@@ -2216,21 +2359,59 @@ function stage0Logic(wsUrl: string): string {
       s.appendChild(fill);
       return s;
     }
-    function addBubble(role, text) {
+    /* The file chips / thumbnails inside a committed user bubble. A text that
+       was only the server's "(attached: x)" placeholder is suppressed: the chips
+       already say it, and showing both reads like a duplicate. */
+    function mountAttachments(bub, attachments) {
+      const list = (attachments || []).filter(a => a && a.url);
+      if (!list.length) return;
+      const box = document.createElement('div');
+      box.className = 'bubble-attachments';
+      for (const a of list) {
+        const link = document.createElement('a');
+        link.href = a.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.title = a.name;
+        if (a.kind === 'image') {
+          const img = document.createElement('img');
+          img.src = a.url;
+          img.alt = a.name;
+          img.loading = 'lazy';
+          link.appendChild(img);
+        } else {
+          const glyph = document.createElement('m3e-icon');
+          glyph.setAttribute('name', 'description');
+          glyph.style.fontSize = '1rem';
+          const name = document.createElement('span');
+          name.className = 'fname';
+          name.textContent = a.name;
+          link.append(glyph, name);
+        }
+        box.appendChild(link);
+      }
+      bub.appendChild(box);
+    }
+    function addBubble(role, text, attachments) {
       const wrap = document.createElement('div');
       wrap.className = 'msg ' + role;
       const avatar = makeAvatar(role);
       const bub = document.createElement('div');
       bub.className = 'bubble';
+      const hasFiles = !!(attachments && attachments.length);
+      // The server substitutes a descriptive line for a file-only message; with
+      // the chips rendered that line is redundant.
+      const placeholder = hasFiles && /^\\(attached(:| \\d)/.test(text || '');
       if (role === 'assistant' || role === 'error') {
         bub.classList.add('md');
         mountMarkdown(bub, text);
         attachBubbleCopy(bub, text);
-      } else {
+      } else if (!(hasFiles && placeholder)) {
         bub.textContent = text;
       }
       wrap.appendChild(avatar);
       wrap.appendChild(bub);
+      if (hasFiles) mountAttachments(bub, attachments);
       chatLog.appendChild(wrap);
       scrollBottom();
       return bub;
@@ -2965,16 +3146,180 @@ function stage0Logic(wsUrl: string): string {
       inputEl.focus();
     }
 
+    // ───────────── Attachments ─────────────
+    /* Files are uploaded the moment they are picked/dropped, so Send only has
+       to reference ids — a 20 MB paste never rides the transcript socket. The
+       tray shows progress and lets a single chip be removed; the ids are sent
+       with the chat line and the server stores/resolves them (uploads.ts). */
+    function attachmentBytes(n) {
+      if (n < 1024) return n + ' B';
+      if (n < 1024 * 1024) return (n / 1024).toFixed(n < 10240 ? 1 : 0) + ' KB';
+      return (n / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+    function uploadsBusy() {
+      return pendingAttachments.some(a => a.pending);
+    }
+    function renderAttachments() {
+      attachTray.innerHTML = '';
+      attachTray.classList.toggle('show', pendingAttachments.length > 0);
+      for (const a of pendingAttachments) {
+        const chip = document.createElement('div');
+        chip.className = 'attach-chip'
+          + (a.kind === 'image' ? ' thumb' : '')
+          + (a.pending ? ' uploading' : '');
+        if (a.kind === 'image' && !a.pending) {
+          const img = document.createElement('img');
+          img.src = a.url;
+          img.alt = a.name;
+          chip.appendChild(img);
+        } else {
+          const glyph = document.createElement('m3e-icon');
+          glyph.setAttribute('name', 'description');
+          glyph.style.fontSize = '1.1rem';
+          const name = document.createElement('span');
+          name.className = 'attach-name';
+          name.textContent = a.pending ? '上传中… ' + a.name : a.name;
+          chip.append(glyph, name);
+          if (!a.pending) {
+            const size = document.createElement('span');
+            size.className = 'attach-size';
+            size.textContent = attachmentBytes(a.size);
+            chip.appendChild(size);
+          }
+        }
+        const rm = document.createElement('button');
+        rm.type = 'button';
+        rm.className = 'attach-remove';
+        rm.title = '移除附件';
+        rm.setAttribute('aria-label', '移除附件');
+        rm.textContent = '\u00d7';
+        rm.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          pendingAttachments = pendingAttachments.filter(x => x !== a);
+          renderAttachments();
+          refreshComposer();
+        });
+        chip.appendChild(rm);
+        attachTray.appendChild(chip);
+      }
+      if (pendingAttachments.length === 0) attachTray.classList.remove('show');
+      refreshComposer();
+    }
+    function addFiles(files) {
+      if (!files || !files.length) return;
+      if (!ws || ws.readyState !== 1) { showToast('连接已断开，无法上传附件', 'error'); return; }
+      const list = Array.prototype.slice.call(files);
+      for (const file of list) {
+        if (file.size === 0) { showToast('跳过空文件：' + file.name, 'warning'); continue; }
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          showToast('文件过大（上限 25 MB）：' + file.name, 'error');
+          continue;
+        }
+        if (pendingAttachments.length >= 20) { showToast('一次最多 20 个附件', 'warning'); break; }
+        const local = {
+          localId: Math.random().toString(36).slice(2),
+          name: file.name,
+          pending: true,
+          kind: /^image\\//.test(file.type) ? 'image' : 'file'
+        };
+        pendingAttachments.push(local);
+        renderAttachments();
+        fetch('/upload?name=' + encodeURIComponent(file.name)
+              + '&type=' + encodeURIComponent(file.type || ''), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file
+        })
+          .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+          .then(info => {
+            const at = pendingAttachments.indexOf(local);
+            if (at === -1) return; // removed while uploading
+            pendingAttachments[at] = info;
+            renderAttachments();
+          })
+          .catch(err => {
+            pendingAttachments = pendingAttachments.filter(x => x !== local);
+            renderAttachments();
+            showToast('上传失败：' + file.name + '（' + (err && err.message || err) + '）', 'error');
+          });
+      }
+      renderAttachments();
+    }
+    attachBtn.addEventListener('click', () => {
+      if (attachBtn.disabled) return;
+      attachInput.click();
+    });
+    attachInput.addEventListener('change', () => {
+      addFiles(attachInput.files);
+      attachInput.value = '';
+    });
+    // Paste: images (and any other clipboard files) land as attachments; plain
+    // text keeps the textarea's own handling. Gated on the composer being the
+    // live surface — pasting into the answer dialog must not queue files for a
+    // message that is not being composed.
+    document.addEventListener('paste', (e) => {
+      if (!e.clipboardData || activePromptId !== null) return;
+      const files = [];
+      for (const item of e.clipboardData.items || []) {
+        if (item.kind === 'file') {
+          const f = item.getAsFile();
+          if (f) files.push(f);
+        }
+      }
+      if (!files.length) return;
+      e.preventDefault();
+      // A screenshot usually arrives with no text, but some clipboards carry
+      // both — keep the text rather than silently discarding it.
+      const text = e.clipboardData.getData('text/plain');
+      if (text && inputEl === document.activeElement) {
+        const start = inputEl.selectionStart || 0;
+        const end = inputEl.selectionEnd || 0;
+        inputEl.value = inputEl.value.slice(0, start) + text + inputEl.value.slice(end);
+        inputEl.selectionStart = inputEl.selectionEnd = start + text.length;
+        inputEl.dispatchEvent(new Event('input'));
+      }
+      addFiles(files);
+    });
+    // Drag and drop anywhere over the composer.
+    let dragDepth = 0;
+    inputBar.addEventListener('dragenter', (e) => {
+      if (!e.dataTransfer || !Array.prototype.some.call(e.dataTransfer.types || [], t => t === 'Files')) return;
+      e.preventDefault();
+      dragDepth++;
+      inputBar.classList.add('dragging');
+    });
+    inputBar.addEventListener('dragover', (e) => {
+      if (e.dataTransfer && Array.prototype.some.call(e.dataTransfer.types || [], t => t === 'Files')) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+      }
+    });
+    inputBar.addEventListener('dragleave', () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) inputBar.classList.remove('dragging');
+    });
+    inputBar.addEventListener('drop', (e) => {
+      if (!e.dataTransfer) return;
+      e.preventDefault();
+      dragDepth = 0;
+      inputBar.classList.remove('dragging');
+      addFiles(e.dataTransfer.files);
+    });
+
     // ───────────── Composer + stop-arm ─────────────
     function refreshComposer() {
       updateStatusDot();
       const promptOpen = activePromptId !== null;
       inputEl.disabled = !connected || promptOpen;
+      attachBtn.disabled = !connected || promptOpen;
+      attachBtn.title = !connected ? '连接已断开' : '添加图片或文件';
       inputEl.placeholder = agentRunning
         ? 'steers the live turn'
         : (runHolding
             ? 'held for the next task turn'
             : 'type a message… (/ 查看命令)');
+      const readyAttachments = pendingAttachments.filter(a => !a.pending).length;
       if (agentRunning && !promptOpen) {
         sendBtn.classList.add('stop');
         sendBtn.disabled = !connected;
@@ -2982,7 +3327,9 @@ function stage0Logic(wsUrl: string): string {
       } else {
         disarmStop();
         sendBtn.classList.remove('stop');
-        sendBtn.disabled = !connected || promptOpen;
+        // An attachment with no text is still a message ("look at this"), so the
+        // button unlocks on files alone — but never while an upload is in flight.
+        sendBtn.disabled = !connected || promptOpen || uploadsBusy();
         sendBtn.title = 'Send';
       }
     }
@@ -3009,8 +3356,23 @@ function stage0Logic(wsUrl: string): string {
     }
     function sendMessage() {
       const text = (inputEl.value || '').trim();
-      if (!text || !ws || ws.readyState !== 1) return;
-      ws.send(JSON.stringify({ type: 'message', text }));
+      if (!ws || ws.readyState !== 1) return;
+      if (uploadsBusy()) { showToast('附件还在上传…', 'warning'); return; }
+      const ids = pendingAttachments.map(a => a.id).filter(Boolean);
+      if (!text && ids.length === 0) return;
+      // Slash commands are text-only on the server (they parse an argument
+      // string), so a command line does not carry attachment ids.
+      const isCommand = text.startsWith('/');
+      const frame = { type: 'message', text };
+      if (!isCommand && ids.length > 0) frame.attachments = ids;
+      ws.send(JSON.stringify(frame));
+      // The server echoes a user_message frame back to every client (including
+      // this one), which is the only renderer of the bubble — the ids are just
+      // dropped from the tray so the next line starts clean.
+      if (!isCommand && ids.length > 0) {
+        pendingAttachments = [];
+        renderAttachments();
+      }
       inputEl.value = '';
       // The autosize component only recomputes on the textarea's input event,
       // which a programmatic value set never fires — dispatch one so the box
@@ -3335,7 +3697,7 @@ function stage0Logic(wsUrl: string): string {
           break;
         }
         case 'user_message':
-          addBubble('user', m.text);
+          addBubble('user', m.text, m.attachments);
           addTurnTime(Date.now(), 'user');
           break;
         case 'system_note':
@@ -3386,6 +3748,8 @@ function stage0Logic(wsUrl: string): string {
           break;
         case 'reset':
           chatLog.innerHTML = '';
+          pendingAttachments = [];
+          renderAttachments();
           finalizeThinking();
           currentBubble = null; streamText = '';
           turnHadContent = false;
@@ -3403,7 +3767,7 @@ function stage0Logic(wsUrl: string): string {
     function renderTurn(t) {
       if (t.error) { addBubble('error', t.text); return; }
       if (t.role === 'system') { addSystemLine(t.text); addTurnTime(t.ts, 'system'); return; }
-      if (t.role === 'user') { addBubble('user', t.text); addTurnTime(t.ts, 'user'); return; }
+      if (t.role === 'user') { addBubble('user', t.text, t.attachments); addTurnTime(t.ts, 'user'); return; }
       for (const p of (t.parts || [])) {
         if (p.kind === 'text') {
           if (p.text.trim()) addBubble('assistant', p.text);

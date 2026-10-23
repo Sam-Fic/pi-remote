@@ -131,10 +131,19 @@ export interface ResetMessage {
  *  session-state.ts (its serializer); re-exported here as part of the wire type. */
 export type {SnapshotMessage} from './session-state.js'
 
+/** A user turn committed to the transcript. `attachments` are the files the
+ *  browser uploaded with it (absent for plain text, so the old shape is kept). */
+export interface UserMessage {
+    type: 'user_message'
+    text: string
+    attachments?: AttachmentInfo[]
+}
+
 /** Server → browser messages. The live text_delta / tool_* / agent_* /
  *  user_message deltas are emitted by the SessionState mutators
  *  and not all enumerated here; the snapshot below carries the full state. */
 export type ServerMessage =
+    | UserMessage
     | PromptMessage
     | PromptResolvedMessage
     | WidgetMessage
@@ -146,10 +155,29 @@ export type ServerMessage =
     | SessionsMessage
     | import('./session-state.js').SnapshotMessage
 
+/** One file a browser attached to a chat line, as echoed back to every client.
+ *  The transcript only needs enough to draw a chip; the bytes live at `url`. */
+export interface AttachmentInfo {
+    /** Server-assigned id (also the `/uploads/<id>` path segment). */
+    id: string
+    /** Original file name, sanitised. */
+    name: string
+    /** `image` files are rendered inline as thumbnails; `file` is a chip. */
+    kind: 'image' | 'file'
+    mimeType: string
+    /** Size in bytes. */
+    size: number
+    /** Where the browser fetches the bytes from. */
+    url: string
+}
+
 /** Browser → server messages. */
 export interface ClientChatMessage {
     type: 'message'
     text: string
+    /** Ids returned by POST /upload, already stored on disk. Optional and
+     *  additive: an older client that only sends `text` still works. */
+    attachments?: string[]
 }
 export interface ClientPromptAnswer {
     type: 'prompt_answer'
@@ -196,7 +224,15 @@ export type ClientMessage =
 export function isClientMessage(x: unknown): x is ClientMessage {
     if (typeof x !== 'object' || x === null) return false
     const m = x as Record<string, unknown>
-    if (m.type === 'message') return typeof m.text === 'string'
+    if (m.type === 'message') {
+        return (
+            typeof m.text === 'string' &&
+            (m.attachments === undefined ||
+                (Array.isArray(m.attachments) &&
+                    m.attachments.length <= 20 &&
+                    m.attachments.every(id => typeof id === 'string' && id.length > 0)))
+        )
+    }
     if (m.type === 'interrupt') return true
     if (m.type === 'clear_held') return true
     if (m.type === 'prompt_answer') {

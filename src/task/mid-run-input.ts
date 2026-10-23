@@ -29,7 +29,11 @@
  * the run has finished.
  */
 
-/** Held lines, oldest first. Delivered as one steer at the next turn start. */
+import {attachmentPathRefsFromPaths} from '../shared/attachment-refs.js'
+
+/** Held lines, oldest first. Delivered as one steer at the next turn start.
+ *  Each entry is a plain string: an attachment is already named by path inside
+ *  it (see holdInput), so the delivery side never needs the file objects. */
 let held: string[] = []
 
 /** Depth, not a boolean: /task-auto brackets its whole loop and each task inside
@@ -76,15 +80,21 @@ export function resetMidRunInput(): void {
     onChange = null
 }
 
-/** Hold a line for the next task turn. Blank lines are ignored. */
-export function holdInput(text: string): void {
-    const trimmed = text.trim()
-    if (trimmed.length === 0) return
-    held.push(trimmed)
+/**
+ * Hold a line for the next task turn. `files` are attachment paths: they are
+ * folded into the line's TEXT, because whatever delivers a held line (the task
+ * pipeline's next turn, /task-resume) sends a string and would otherwise drop
+ * the attachment entirely. A file-only line therefore still has a body.
+ */
+export function holdInput(text: string, files?: readonly string[]): void {
+    const paths = files && files.length > 0 ? [...files] : []
+    const withRefs = `${text.trim()}${attachmentPathRefsFromPaths(paths)}`.trim()
+    if (withRefs.length === 0) return
+    held.push(withRefs)
     onChange?.()
 }
 
-/** The lines currently waiting (a copy — mutating it must not affect state). */
+/** The lines currently waiting, oldest first (attachments already folded in). */
 export function heldInput(): string[] {
     return [...held]
 }

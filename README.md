@@ -79,6 +79,7 @@ It is **additive** — with nothing connected, pi behaves exactly as before. The
 - **Tailscale HTTPS** (`src/remote/tailscale.ts`) — best-effort `tailscale serve` so phones get a secure context for push; degrades to the LAN `http://` URL on failure.
 - **Model & theme pickers** — switch the live model and the UI theme / accent from the browser.
 - **Command suggestions** — an anchored menu of slash commands aligned to the input.
+- **Attachments** — attach images and files from the composer (paperclip, clipboard paste, or drag-and-drop). Images are sent inline to the model *and* every attachment is named by its absolute path, so non-vision models and later turns can still `read` it (`src/remote/uploads.ts`, `src/remote/attachments.ts`).
 - **`/remote` and `/compact` commands** — `/remote` shows the QR & URLs (`/remote stop` shuts the server down for the session); `/compact` compacts context from the browser.
 
 ## Install
@@ -110,6 +111,7 @@ pi install npm:<scope>/pi-remote
    - Watch streaming output, tool calls, and task status.
    - Answer grill questions, start tasks, and steer a live turn.
    - Switch / delete sessions from the sidebar, pick a model or theme, and send slash commands.
+   - Attach images or files with the paperclip (or paste / drag them in); they are stored under `~/.local/share/pi-task/remote-uploads/` and referenced by absolute path.
    - Tap the bell to receive push notifications.
 
 > **No authentication.** It is a personal LAN / Tailscale tool. Do not expose the port to untrusted networks.
