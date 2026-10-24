@@ -531,7 +531,7 @@ m3e-app-bar#top-bar {
 .msg.user { flex-direction: row-reverse; }
 .bubble {
     position: relative;
-    padding: 0.75rem;
+    padding: var(--_bubble-pad);
     /* Concentric with the code blocks it wraps: the block's corner arc
        center sits (code-r + pad, code-r + pad) in from the bubble corner.
        The padding is uniform, and a code block at the bubble's top/bottom
@@ -541,7 +541,18 @@ m3e-app-bar#top-bar {
        24px side inset below, in their own margins, so the corner math
        stays code-driven. */
     --_code-r: calc(1rem + var(--md-sys-shape-corner-extra-small));
-    border-radius: calc(var(--_code-r) + 0.75rem);
+    /* The corner contract, in one place: a nested surface sits --_bubble-pad
+       from this edge and carries --_code-r, so the two arcs share a centre
+       (r_outer − r_inner == gap). Every nested surface — code blocks, tables,
+       attachment cards — consumes these two values rather than inventing its
+       own radius, which is what keeps them concentric. */
+    --_bubble-pad: 0.75rem;
+    /* Concentric means r_inner == r_outer − gap, which only has a solution
+       while gap < r_outer. At the tail corner (radius 0.5rem) the 0.75rem
+       gutter already exceeds the arc, so the nested surface never reaches into
+       it and the relation simply does not apply — hence one radius
+       (--_code-r) serves every nested surface and every corner it can touch. */
+    border-radius: calc(var(--_code-r) + var(--_bubble-pad));
     /* Single-line content turns the bubble into a capsule of its big
        corner radius: total height = 2 × radius. min-height is content-box
        (no global border-box here), so it carries the padding subtraction:
@@ -563,9 +574,10 @@ m3e-app-bar#top-bar {
     background: var(--md-sys-color-primary-container);
     color: var(--md-sys-color-on-primary-container);
     border-top-right-radius: 0.5rem;
-    /* Pure-text bubble: no code blocks inside, so the corner math doesn't
-       bind — the prose inset comes straight from the padding. */
-    padding: 0.75rem 1.5rem;
+    /* Pure-text bubble: the prose inset comes straight from the padding. The
+       attachment strip below cancels the extra 12px (see .bubble-attachments)
+       so nested cards still sit in the 12px gutter the corner math needs. */
+    padding: var(--_bubble-pad) 1.5rem;
     /* Roomier 24px sides mean the shared content min-width would land the
        capsule at 88px; subtract it from the 2 × radius TOTAL instead:
        64 − 48 padding = 16px content (2×code-r − 1.5rem), so a lone letter
@@ -1138,30 +1150,74 @@ m3e-icon-button#attach-btn:disabled {
 }
 .attach-chip .attach-remove:hover { background: var(--md-sys-color-error-container); color: var(--md-sys-color-on-error-container); }
 .attach-chip.uploading { opacity: 0.6; }
-/* Attachments inside a committed user bubble. */
+/* Attachments inside a committed user bubble.
+   Three nested rounded surfaces here, each concentric with its parent:
+     bubble  (r = _code-r + pad, padded 12px)
+       └ card (r = _code-r, in that 12px gutter)
+           └ thumb/img (r = _code-r − card padding, inset by card padding)
+   The user bubble pads its prose 24px horizontally for a roomier read, but a
+   card in a 24px gutter could never be concentric with a 32px corner (the
+   radius would have to be 8px, a shape the M3 scale does not have and one that
+   reads as a square inside a round bubble). So the strip pulls itself back to
+   the 12px gutter instead — the same gutter code blocks use — and every corner
+   then obeys r_outer − r_inner == gap. */
 .bubble .bubble-attachments {
     display: flex; flex-wrap: wrap; gap: 0.4rem;
+    /* Natural heights only: the default stretch made a one-line file chip as
+       tall as the photo beside it, which turned a capsule into a slab and put
+       its 20px arcs nowhere near the bubble's corners. */
+    align-items: flex-start;
     margin-top: 0.5rem;
+    /* The card's inner padding lives HERE, not on the card: the image's radius
+       is derived from it (r_card − r_card_pad) and the image is the card's
+       descendant, so the property must sit on a shared ancestor. */
+    --_card-pad: 0.25rem;
 }
+/* Only the USER bubble over-pads its prose; cancel exactly that surplus so the
+   cards sit in the 12px corner gutter. An assistant bubble already pads 12px,
+   so there is nothing to cancel and the rule stays off it. */
+.msg.user .bubble .bubble-attachments {
+    margin-left: calc(var(--_bubble-pad) - 1.5rem);
+    margin-right: calc(var(--_bubble-pad) - 1.5rem);
+}
+/* First block: the strip becomes the bubble's first child, so it must start on
+   the padding line (which is the gutter the corner math uses) rather than keep
+   the prose's 8px top margin. */
 .bubble .bubble-attachments:first-child { margin-top: 0; }
+/* Card = file chip and image tile alike: one radius, --_code-r (20px), which
+   is the bubble's 32px minus the 12px gutter. */
 .bubble .bubble-attachments a {
     display: flex; align-items: center; gap: 0.35rem;
     max-width: 14rem;
-    padding: 0.25rem 0.55rem;
-    border-radius: var(--md-sys-shape-corner-medium);
+    padding: var(--_card-pad) 0.55rem;
+    border-radius: var(--_code-r);
     background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 8%, transparent);
     color: inherit; text-decoration: none;
     font-size: 0.8rem;
+    overflow: hidden;
 }
 .bubble .bubble-attachments a:hover { text-decoration: underline; }
 .bubble .bubble-attachments a .fname {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The image card is the thumbnail's frame: it pads --_card-pad, so the image's
+   corner must be the card's radius MINUS that padding to stay concentric.
+   The card must SHRINK-WRAP its thumbnail so its padding is exactly
+   --_card-pad on all four sides (the strip is align-items:flex-start, so no
+   row-stretch can pad it unevenly). line-height:0 kills the inline baseline
+   gap a block image would otherwise leave under itself. */
+.bubble .bubble-attachments a.image-card {
+    padding: var(--_card-pad);
+    border-radius: var(--_code-r);
+    line-height: 0;
+}
 .bubble .bubble-attachments img {
     display: block;
     max-width: min(18rem, 100%);
     max-height: 14rem;
-    border-radius: var(--md-sys-shape-corner-medium);
+    border-radius: calc(var(--_code-r) - var(--_card-pad));
+    /* A stray inline baseline gap would break the frame's symmetry. */
+    vertical-align: middle;
 }
 /* The filled variant reserves the floating-label row at the TOP of its content
    box (24px) while .base keeps only 8px below the text. This field has no label,
@@ -2414,6 +2470,9 @@ function stage0Logic(wsUrl: string): string {
         link.rel = 'noopener';
         link.title = a.name;
         if (a.kind === 'image') {
+          // The card frames the thumbnail, so it carries the padding the image's
+          // radius is derived from (see .image-card / img in the stylesheet).
+          link.classList.add('image-card');
           const img = document.createElement('img');
           img.src = a.url;
           img.alt = a.name;

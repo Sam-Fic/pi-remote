@@ -256,6 +256,45 @@ describe('mduiHtml()', () => {
         expect(rule.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/(^|[^-\w])height\s*:/)
     })
 
+    it('derives nested attachment radii from the bubble so the arcs stay concentric', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+
+        // One contract, declared on the bubble: a nested surface sits
+        // --_bubble-pad in and carries --_code-r, so r_outer - r_inner == gap.
+        expect(out).toContain('--_bubble-pad: 0.75rem')
+        expect(out).toMatch(/border-radius: calc\(var\(--_code-r\) \+ var\(--_bubble-pad\)\)/)
+
+        // The card and the thumbnail inside it must BOTH read that contract:
+        // the card is --_code-r, the image one card-padding tighter.
+        const card = out.match(/\.bubble \.bubble-attachments a \{[^}]*\}/)
+        expect(card).not.toBeNull()
+        expect(card![0]).toContain('border-radius: var(--_code-r)')
+
+        const img = out.match(/\.bubble \.bubble-attachments img \{[^}]*\}/)
+        expect(img).not.toBeNull()
+        expect(img![0]).toContain('border-radius: calc(var(--_code-r) - var(--_card-pad))')
+
+        // The padding the image's radius is derived from must be readable from
+        // the image (i.e. declared on the strip, a shared ancestor) -- a
+        // property on the card alone would not inherit down to the img.
+        const strip = out.match(/\.bubble \.bubble-attachments \{[\s\S]*?\n\}/)
+        expect(strip).not.toBeNull()
+        expect(strip![0]).toContain('--_card-pad:')
+    })
+
+    it('keeps the user bubble gutter equal to the corner gap attachments assume', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The user bubble pads prose 1.5rem wide, but a card in a 24px gutter
+        // could never be concentric with a 32px corner. The strip cancels
+        // exactly that surplus so cards land in the 12px gutter instead.
+        expect(out).toMatch(/margin-left: calc\(var\(--_bubble-pad\) - 1\.5rem\)/)
+        expect(out).toMatch(/margin-right: calc\(var\(--_bubble-pad\) - 1\.5rem\)/)
+        const strip = out.match(/\.bubble \.bubble-attachments \{[\s\S]*?\n\}/)
+        // Row-stretch would pad a short image unevenly (4px sides, 13px top and
+        // bottom), breaking the single-radius concentric relation.
+        expect(strip![0]).toContain('align-items: flex-start')
+    })
+
     it('removes the form-field subscript row instead of leaving dead space', () => {
         // The reserved supporting-text row is what made the field host taller
         // than its visible box. hide-subscript is the component's own switch.
