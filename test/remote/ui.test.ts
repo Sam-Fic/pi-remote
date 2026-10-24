@@ -295,6 +295,33 @@ describe('mduiHtml()', () => {
         expect(strip![0]).toContain('align-items: flex-start')
     })
 
+    it('sits the remove button concentric with the chip corner it covers', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // One radius name for the chip and one for the button circle, and the
+        // inset derived from the difference: r_chip - r_btn == inset is what
+        // puts both arcs' centres on the same point.
+        const chip = out.match(/\.attach-chip \{[^}]*\}/)
+        expect(chip).not.toBeNull()
+        expect(chip![0]).toContain('--_chip-r: var(--md-sys-shape-corner-large)')
+        expect(chip![0]).toContain('--_remove-r:')
+        expect(chip![0]).toContain('--_remove-inset: calc(var(--_chip-r) - var(--_remove-r))')
+
+        const btn = out.match(/\.attach-chip \.attach-remove \{[^}]*\}/)
+        expect(btn).not.toBeNull()
+        // Positioned BY the derived inset, sized BY the derived diameter — the
+        // old hardcoded top/right (.1rem) left the centre 3.2px off the arc.
+        expect(btn![0]).toContain('top: var(--_remove-inset)')
+        expect(btn![0]).toContain('right: var(--_remove-inset)')
+        expect(btn![0]).toMatch(/width: calc\(2 \* var\(--_remove-r\)\)/)
+        // No hardcoded offsets may survive next to the derived ones.
+        expect(btn![0]).not.toMatch(/top:\s*\.?\d/)
+
+        // The thumbnail clipped to the chip shares its radius (gap 0), so it
+        // must read the same variable rather than restate the token.
+        const img = out.match(/\.attach-chip\.thumb img \{[^}]*\}/)
+        expect(img![0]).toContain('border-radius: inherit')
+    })
+
     it('removes the form-field subscript row instead of leaving dead space', () => {
         // The reserved supporting-text row is what made the field host taller
         // than its visible box. hide-subscript is the component's own switch.

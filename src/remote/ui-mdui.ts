@@ -1107,7 +1107,14 @@ m3e-icon-button#attach-btn:disabled {
     flex: 0 0 auto;
     max-width: 11rem;
     padding: 0.35rem 2rem 0.35rem 0.6rem;
-    border-radius: var(--md-sys-shape-corner-large);
+    /* The chip and everything clipped to its corner share one radius, and the
+       remove button's position is DERIVED from it (see .attach-remove): a
+       circle dropped on a rounded corner is concentric only when its centre
+       lands on the corner arc's centre, i.e. r_chip − r_btn from the edge. */
+    --_chip-r: var(--md-sys-shape-corner-large);
+    --_remove-r: 0.7rem;
+    --_remove-inset: calc(var(--_chip-r) - var(--_remove-r));
+    border-radius: var(--_chip-r);
     background: var(--md-sys-color-surface-container-highest);
     color: var(--md-sys-color-on-surface);
     font-size: 0.8rem;
@@ -1128,15 +1135,22 @@ m3e-icon-button#attach-btn:disabled {
     background: transparent;
 }
 .attach-chip.thumb img {
+    /* Gap to its chip is zero, so the radii are equal by definition — and
+       inherit keeps them locked together if --_chip-r ever changes. */
     width: 100%; height: 100%;
     object-fit: cover;
-    border-radius: var(--md-sys-shape-corner-large);
+    border-radius: inherit;
     display: block;
 }
+/* Concentric with the chip's corner arc: the button is a circle of radius
+   --_remove-r whose centre sits --_remove-inset in from the corner, so
+   r_chip − r_remove == inset on both axes and the two arcs share a centre.
+   (The old 0.1rem inset put the circle's centre 3.2px off that centre, which
+   is why it read as pasted on rather than sitting IN the corner.) */
 .attach-chip .attach-remove {
     position: absolute;
-    top: .1rem; right: .1rem;
-    width: 1.4rem; height: 1.4rem;
+    top: var(--_remove-inset); right: var(--_remove-inset);
+    width: calc(2 * var(--_remove-r)); height: calc(2 * var(--_remove-r));
     min-width: 0;
     border: none;
     border-radius: 50%;
