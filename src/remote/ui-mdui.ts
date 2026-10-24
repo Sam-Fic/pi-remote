@@ -58,19 +58,37 @@ const CSS = `
 /* M3 Expressive press (shape morph) is native to the m3e buttons.
    Only the send button needs our own transform spring for the
    send<->stop 90deg swing. */
+
+/* ONE composer control size. Both buttons are exactly the text field's
+   single-line height (56px — m3e's .content min-height; the host equals the
+   visible box because hide-subscript="always" removes the reserved row, see
+   the form-field rule below), and NEITHER of them grows when the textarea
+   goes multiline: a four-line message must not turn the send capsule into a
+   slab. align-self:center keeps them on the field's midline instead of
+   riding its bottom edge, which is what a stretched/previously-end-aligned
+   button did. The tokens are set on the row so both controls read the same
+   value; width/height are also spelled out because the host's intrinsic
+   box would otherwise win over the container-height token.
+   The value is px, not rem, on purpose: m3e's own .content min-height is a
+   hardcoded 56px, so a root font-size change would otherwise desync the
+   controls from the field they sit beside. */
+#composer-row { --composer-control: 56px; }
 m3e-icon-button#send-btn {
-    /* Capsule, as tall as the input it sits beside. align-self:stretch makes
-       the button track the <m3e-form-field> host height exactly, and it keeps
-       tracking when the textarea goes multiline. The host is 4px taller than
-       the field's VISIBLE box (that 4px is the collapsed supporting-text row's
-       leftover margin, see the m3e-form-field rule below), so
-       margin-bottom:0.25rem trims the button by exactly that much and its top
-       and bottom edges land flush on the visible input box. Width is wider than
-       the height so the full-radius shape reads as a stadium, not a circle. */
+    /* Stadium, not a circle: wider than the control height. */
     width: 5.25rem;
-    align-self: stretch;
-    margin-bottom: 0.25rem;
-    --m3e-icon-button-container-height: 100%;
+    height: var(--composer-control);
+    min-height: var(--composer-control);
+    align-self: center;
+    --m3e-icon-button-container-height: var(--composer-control);
+}
+m3e-icon-button#attach-btn {
+    /* Square = a true circle at the control size, matching the field it sits
+       beside rather than the smaller 40px default tonal circle. */
+    width: var(--composer-control);
+    height: var(--composer-control);
+    min-height: var(--composer-control);
+    align-self: center;
+    --m3e-icon-button-container-height: var(--composer-control);
 }
 m3e-icon-button#send-btn:active {
     transform: scale(0.94);
@@ -1039,12 +1057,6 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
     display: flex; gap: 0.5rem; align-items: flex-end;
     width: 100%;
 }
-/* Paperclip: a tonal circle sitting on the send capsule's baseline, so the row
-   still reads as "one loud action" (send) with attach as support. */
-m3e-icon-button#attach-btn {
-    align-self: flex-end;
-    margin-bottom: 0.25rem;
-}
 m3e-icon-button#attach-btn:disabled {
     opacity: 0.38;
 }
@@ -1167,13 +1179,20 @@ m3e-icon-button#attach-btn:disabled {
    At the component's default density the visible field is 56px (the height the
    old MDUI text-field had, and what reads as "normal"), but the host is 76px:
    the extra ~20px is the form-field's RESERVED supporting-text row at the
-   bottom (16px body-small line-height + 4px margin). That reserved row has no
-   part and no height token, so it can't be removed directly — but it's empty
-   here (no supporting/error text), so collapsing its line-height to 0 makes the
-   host ~60px and lets the stretched send button sit flush with the visible
-   field. Density is left at default on purpose: density:-3 had shrunk the
-   VISIBLE field to 44px, which looked too short. Scoped to this host only. */
-#composer-row > m3e-form-field { flex: 1 1 auto; min-width: 0; --md-sys-typescale-body-small-line-height: 0px; }
+   bottom (16px body-small line-height + 4px margin). This field never shows a
+   supporting/error/hint line, so the row is pure dead space — and it is what
+   made the buttons look taller than the box they sit beside.
+   hide-subscript="always" removes it at the source (the component's own
+   state, so the host equals the visible box exactly); the line-height token is
+   zeroed as well, belt-and-braces, because the collapsed row's 4px margin is
+   not a token and older builds of the component drop the attribute's effect.
+   Density is left at default on purpose: density:-3 had shrunk the VISIBLE
+   field to 44px, which looked too short. Scoped to this host only. */
+#composer-row > m3e-form-field {
+    flex: 1 1 auto;
+    min-width: 0;
+    --md-sys-typescale-body-small-line-height: 0px;
+}
 /* Expressive send button: a filled primary circle — the composer's one
    loud accent. send<->stop swings 90deg on the spring token; running/armed
    retarget the primary tokens to the error palette (armed is full error). */
@@ -1716,7 +1735,10 @@ export function mduiHtml(wsUrl: string): string {
              drag-and-drop is in progress (see #input-bar.dragging). -->
         <m3e-icon-button id="attach-btn" variant="tonal" aria-label="添加附件" title="添加图片或文件" disabled><m3e-icon name="attach_file"></m3e-icon></m3e-icon-button>
         <input type="file" id="attach-input" multiple hidden>
-        <m3e-form-field variant="filled">
+        <!-- hide-subscript="always": this field has no supporting text, and the
+             reserved row for it is what made the host taller than the visible
+             box (and the buttons beside it look mismatched). -->
+        <m3e-form-field variant="filled" hide-subscript="always">
           <textarea id="input" placeholder="输入消息（/ 查看命令）…" rows="1" disabled></textarea>
         </m3e-form-field>
         <m3e-textarea-autosize for="input" min-rows="1" max-rows="6"></m3e-textarea-autosize>

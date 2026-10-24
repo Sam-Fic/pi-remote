@@ -221,6 +221,29 @@ describe('mduiHtml()', () => {
         expect(m![0]).toContain('textContent = text')
     })
 
+    it('sizes both composer buttons to the single-line field height and centres them', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // One shared control size, pinned in px to m3e's hardcoded 56px field
+        // height, so neither button can drift from the field it sits beside.
+        expect(out).toContain('--composer-control: 56px')
+        for (const id of ['send-btn', 'attach-btn']) {
+            const m = out.match(new RegExp(`m3e-icon-button#${id}\\s*\\{[^}]*\\}`))
+            expect(m).not.toBeNull()
+            // The rule must size the button AND centre it on the field's midline,
+            // never stretch it with the textarea.
+            expect(m![0]).toContain('height: var(--composer-control)')
+            expect(m![0]).toContain('align-self: center')
+            expect(m![0]).not.toContain('align-self: stretch')
+            expect(m![0]).not.toContain('align-self: flex-end')
+        }
+    })
+
+    it('removes the form-field subscript row instead of leaving dead space', () => {
+        // The reserved supporting-text row is what made the field host taller
+        // than its visible box. hide-subscript is the component's own switch.
+        expect(mduiHtml('ws://localhost:7600/ws')).toContain('hide-subscript="always"')
+    })
+
     it('anchors layout to the bottom safe-area so there is no gap', () => {
         // viewport-fit=cover makes fixed bottom content ride the home indicator
         // unless the CSS consumes the inset.
