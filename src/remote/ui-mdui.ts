@@ -1170,8 +1170,26 @@ m3e-icon-button#attach-btn:disabled {
    not a transform, which would blur the glyphs — lifts the text by the
    imbalance (24 − 8) / 2 = 8px and leaves the field's own height untouched;
    that also holds when the autosize component grows it, where the text block
-   then sits 16/16. */
-#input { flex: 1; min-width: 0; width: 100%; margin-top: -8px; margin-bottom: 8px; }
+   then sits 16/16.
+
+   min-height MUST be a full line box. m3e-textarea-autosize measures one line
+   by cloning the control into a hidden node (a clone carrying none of this
+   stylesheet, and with its padding forced to "2px 0") and subtracting a
+   hardcoded 4px. That clone measures 19px here, so the EMPTY field was set to
+   height:19px — 5px short of the 24px line-height. The text then overflowed
+   its own box by 5px, the form-field clipped the descender, and the placeholder
+   sat visibly low. 1lh pins the control to exactly one line while leaving the
+   component free to grow it to N lines. (It is not 24px: 1lh follows the
+   textarea's own line-height, so a theme or font change cannot desync them.) */
+#input {
+    flex: 1; min-width: 0; width: 100%;
+    margin-top: -8px; margin-bottom: 8px;
+    /* MUST be !important: the component writes min-height/height as an INLINE
+       style on the control, so a plain declaration here loses no matter how
+       specific it is. Only min-height is forced — height keeps following the
+       component's measurements, which is what makes it grow line by line. */
+    min-height: 1lh !important;
+}
 /* The flex child of the bar is the m3e-form-field WRAPPER, not the inner
    #input textarea. The wrapper must grow to fill the row; otherwise it keeps
    its intrinsic width and leaves a gap beside the send button. (#input's own

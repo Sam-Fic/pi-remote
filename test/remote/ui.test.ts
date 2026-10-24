@@ -238,6 +238,24 @@ describe('mduiHtml()', () => {
         }
     })
 
+    it('pins the textarea to at least one full line so the placeholder is not clipped', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        const m = out.match(/#input\s*\{[^}]*\}/)
+        expect(m).not.toBeNull()
+        const rule = m![0]
+        // m3e-textarea-autosize measures a line with a detached clone (whose
+        // padding it forces to "2px 0") and subtracts a hardcoded 4px, yielding
+        // 19px here. Without a floor the EMPTY field is set to 19px against a
+        // 24px line-height: the descender clips and the text sits low.
+        expect(rule).toContain('min-height: 1lh !important')
+        // !important is required: the component writes min-height INLINE.
+        // height must stay free, or the field could never grow.
+        // `height` must stay free so the field can still grow — only the floor
+        // is ours. (The comment above the declaration mentions "height", so
+        // strip comments before checking.)
+        expect(rule.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/(^|[^-\w])height\s*:/)
+    })
+
     it('removes the form-field subscript row instead of leaving dead space', () => {
         // The reserved supporting-text row is what made the field host taller
         // than its visible box. hide-subscript is the component's own switch.
