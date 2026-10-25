@@ -1388,17 +1388,53 @@ m3e-card#status-panel {
    sibling floating panels; its own children (list rows) sit flush and are
    clipped, so no inner radius constrains it. Anchored under its button
    (bar row: 0.5rem pad + 2.5rem settings button + 0.6rem gap). */
-/* Notification history as a modal bottom sheet: the sheet owns its own
-   surface, elevation and slide-in, so there is no dropdown chrome left here
-   (no position/anchor, no .open class, no box-shadow). */
-#notif-panel {
+/* Notification history, settings, and the model list are modal bottom sheets
+   on a phone and anchored dropdowns on a wide screen. The narrow-screen rules
+   (the default) are the sheet's own: it owns the surface, the slide-in and the
+   scrim, so there is no dropdown chrome here — no position, no .open class, no
+   box-shadow. The wide-screen overrides live further down. */
+#notif-panel,
+#settings-panel,
+#model-menu {
     --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
 }
 #notif-list { overflow-y: auto; }
-/* Settings dropdown (gear in the app bar): theme mode + thinking auto-
-   collapse. Same surface recipe, anchored under its own button. */
-#settings-panel {
-    --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
+
+/* ── Wide screens: the same sheets behave as anchored dropdowns ──
+   A bottom sheet is fixed to the bottom edge by its own :host rule
+   (top: calc(100vh - height)), so the dropdown form is reached by overriding
+   that placement — the component exposes width tokens but no top-space token
+   that actually moves it. The handle is dropped here too: a drag affordance
+   means nothing on a panel that is already fully visible, and it is the
+   clearest signal of which mode the user is in. The handle attribute itself
+   is toggled in JS at the same breakpoint (see the matchMedia call), because
+   hiding it with CSS alone would still leave it in the tab order. */
+@media (min-width: 601px) {
+    #notif-panel,
+    #settings-panel,
+    #model-menu {
+        --m3e-bottom-sheet-width: auto;
+        --m3e-bottom-sheet-max-width: 320px;
+        /* A dropdown's width is its own, not the content's: 'auto' would let a
+           short model name shrink the list to a stub. */
+        width: 320px;
+        /* The dropdown's own shadow and small corner, matching the old
+           pre-sheet chrome exactly. */
+        --m3e-bottom-sheet-container-shape: var(--md-sys-shape-corner-extra-large);
+        --m3e-bottom-sheet-minimized-container-shape: var(--md-sys-shape-corner-extra-large);
+        /* Anchored under the app bar's right-hand buttons, each on its own
+           corner: bell 3.6rem from the right, gear 0.5rem, model pill flush. */
+        top: calc(var(--safe-top) + 4rem) !important;
+        transform: none !important;
+        transition: opacity 140ms ease !important;
+        box-shadow: 0 4px 8px 3px rgba(0,0,0,.3);
+        max-height: 60vh;
+        overflow: hidden;
+    }
+    #notif-panel { left: auto !important; right: 3.6rem; }
+    #settings-panel { left: auto !important; right: 0.5rem; }
+    /* The model pill's position is content-dependent (it moves with the model
+       name), so this sheet is placed in JS at open time — see anchorWideSheet. */
 }
 #notif-toggle-row,
 #settings-title,
@@ -1993,7 +2029,23 @@ function stage0Logic(wsUrl: string): string {
         const el = document.getElementById(id);
         if (el) el.detents = ['fit', 'half', 'full'];
       }
+      syncSheetMode();
+      // A rotation, a window resize onto a dock, or a phone held sideways all
+      // cross the breakpoint, so the mode follows it live.
+      window.matchMedia('(min-width: 601px)').addEventListener('change', syncSheetMode);
     }).catch(() => {});
+
+    /* Drag handle only on the sheet form. On a wide screen the panel is an
+       anchored dropdown that is fully visible on open, where a drag affordance
+       means nothing — and removing the attribute keeps the handle out of the
+       tab order, which hiding it with CSS alone would not. */
+    function syncSheetMode() {
+      const wide = window.matchMedia('(min-width: 601px)').matches;
+      for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
+        const el = document.getElementById(id);
+        if (el) el.toggleAttribute('handle', !wide);
+      }
+    }
     const drawer       = document.getElementById('drawer');
     const menuBtn      = document.getElementById('menu-btn');
     const drawerClose  = document.getElementById('session-drawer-close');
@@ -3004,8 +3056,21 @@ function stage0Logic(wsUrl: string): string {
     modelTrigger.addEventListener('click', (e) => {
       e.stopPropagation();
       if (modelMenuOpen) { modelMenu.hide(); return; }
+      anchorWideSheet(modelMenu, modelPicker);
       modelMenu.show();
     });
+
+    /* On a wide screen the sheet is an anchored dropdown, and the model pill's
+       position depends on the model name's width — so it is measured, not
+       hardcoded. Clamped to the viewport so a long name near the right edge
+       cannot push the sheet off-screen. */
+    function anchorWideSheet(sheet, anchorEl) {
+      if (!window.matchMedia('(min-width: 601px)').matches) return;
+      const a = anchorEl.getBoundingClientRect();
+      const w = 320;
+      sheet.style.left = Math.max(8, Math.min(a.left, innerWidth - w - 8)) + 'px';
+      sheet.style.right = 'auto';
+    }
 
     // ───────────── Model picker menu ─────────────
     // Fed by the server's models frame (on connect, on session_start and after

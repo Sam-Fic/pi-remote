@@ -322,6 +322,38 @@ describe('mduiHtml()', () => {
         expect(img![0]).toContain('border-radius: inherit')
     })
 
+    it('uses bottom sheets on narrow screens and dropdowns on wide ones', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Narrow is the default (the sheet's own form: bottom-anchored, with a
+        // drag handle). Wide re-anchors the same elements as dropdowns.
+        expect(out).toMatch(/@media \(min-width: 601px\)/)
+        const mq = out.match(/@media \(min-width: 601px\)\s*\{([\s\S]*?)\n\}/)
+        expect(mq).not.toBeNull()
+        const wide = mq![1]
+        // The sheet's own :host pins it to the bottom edge, so the dropdown
+        // form has to override that placement.
+        expect(wide).toContain('top: calc(var(--safe-top) + 4rem) !important')
+        expect(wide).toContain('transform: none !important')
+        expect(wide).toContain('width: 320px')
+        // Bell and gear keep their old anchors; the model pill is placed by JS
+        // because its position follows the model name's width.
+        expect(wide).toMatch(/#notif-panel \{[^}]*right: 3\.6rem/)
+        expect(wide).toMatch(/#settings-panel \{[^}]*right: 0\.5rem/)
+        // The handle is a narrow-screen affordance: it is removed by attribute
+        // (not just hidden) so it also leaves the tab order.
+        expect(out).toContain("el.toggleAttribute('handle', !wide)")
+        expect(out).toContain("window.matchMedia('(min-width: 601px)').addEventListener('change', syncSheetMode)")
+    })
+
+    it('anchors the wide-screen model sheet under the pill by measuring it', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The pill moves with the model name, so the sheet's left is computed
+        // at open time and clamped to the viewport.
+        expect(out).toContain('function anchorWideSheet(sheet, anchorEl)')
+        expect(out).toMatch(/Math\.min\(a\.left, innerWidth - w - 8\)/)
+        expect(out).toContain('anchorWideSheet(modelMenu, modelPicker)')
+    })
+
     it('turns the three app-bar panels into modal bottom sheets with drag handles', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
         for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
