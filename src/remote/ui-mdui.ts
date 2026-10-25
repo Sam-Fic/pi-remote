@@ -329,10 +329,9 @@ html, body {
 #app-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
 /* The model name takes the old title slot; falls back to the app name
    (muted) before the first snapshot reports a model. The pill is the
-   activation surface: an m3e-menu-trigger nested inside augments it with
-   the menu relationship and opens #model-menu; a tonal background
-   (hierarchy by color, never a hairline stroke) whose caret flips while
-   the menu is open. */
+   activation surface for the model sheet: a plain button opening a modal
+   bottom sheet, with a tonal background (hierarchy by color, never a
+   hairline stroke) whose caret flips while the sheet is open. */
 #model-picker {
     display: flex;
     align-items: center;
@@ -351,7 +350,12 @@ html, body {
 }
 /* The trigger is a pure behavior wrapper: dissolve its box so the name and
    caret participate directly in the pill's flex layout. */
-#model-picker m3e-menu-trigger { display: contents; }
+#model-picker #model-trigger {
+    display: contents;
+    /* The pill carries the padding and the hit area; a nested button must not
+       add a UA border, background or its own focus ring on top of it. */
+    border: 0; background: none; color: inherit; font: inherit; padding: 0;
+}
 #model-picker:hover {
     background: color-mix(in srgb, var(--md-sys-color-on-surface) 13%, transparent);
 }
@@ -1384,38 +1388,18 @@ m3e-card#status-panel {
    sibling floating panels; its own children (list rows) sit flush and are
    clipped, so no inner radius constrains it. Anchored under its button
    (bar row: 0.5rem pad + 2.5rem settings button + 0.6rem gap). */
+/* Notification history as a modal bottom sheet: the sheet owns its own
+   surface, elevation and slide-in, so there is no dropdown chrome left here
+   (no position/anchor, no .open class, no box-shadow). */
 #notif-panel {
-    position: fixed;
-    top: calc(var(--safe-top) + 4rem);
-    right: 3.6rem;
-    width: min(320px, calc(100vw - 4.6rem)); max-height: 60vh;
-    background: var(--md-sys-color-surface-container-high);
-    border-radius: var(--md-sys-shape-corner-extra-large);
-    box-shadow: 0 4px 8px 3px rgba(0,0,0,.3);
-    padding: 0.5rem;
-    display: none;
-    flex-direction: column; gap: 0.4rem;
-    z-index: 60;
-    overflow: hidden;
+    --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
 }
-#notif-panel.open { display: flex; }
+#notif-list { overflow-y: auto; }
 /* Settings dropdown (gear in the app bar): theme mode + thinking auto-
    collapse. Same surface recipe, anchored under its own button. */
 #settings-panel {
-    position: fixed;
-    top: calc(var(--safe-top) + 4rem);
-    right: 0.5rem;
-    width: min(320px, calc(100vw - 1rem));
-    background: var(--md-sys-color-surface-container-high);
-    border-radius: var(--md-sys-shape-corner-extra-large);
-    box-shadow: 0 4px 8px 3px rgba(0,0,0,.3);
-    padding: 0.5rem;
-    display: none;
-    flex-direction: column; gap: 0.4rem;
-    z-index: 60;
-    overflow: hidden;
+    --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
 }
-#settings-panel.open { display: flex; }
 #notif-toggle-row,
 #settings-title,
 .settings-row,
@@ -1502,10 +1486,18 @@ m3e-list#notif-list {
    component's defaults. Only theme integration (surface color + elevation
    onto the mdui tokens) and the scroll extent are mapped. */
 #model-menu {
-    --m3e-menu-container-color: var(--md-sys-color-surface-container-high);
-    --m3e-menu-container-elevation: 0 4px 8px 3px rgba(0,0,0,.3);
-    --m3e-menu-container-max-height: 55vh;
+    --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
 }
+#model-list { max-height: 55vh; overflow-y: auto; }
+.model-row {
+    display: flex; align-items: center; gap: 0.5rem; width: 100%;
+    padding: 0.6rem 0.75rem; border: 0; background: none; color: inherit;
+    font: inherit; text-align: left; cursor: pointer;
+    border-radius: var(--md-sys-shape-corner-large);
+}
+.model-row:hover { background: var(--md-sys-color-surface-container-highest); }
+.model-row.current .model-row-name { font-weight: 600; }
+.model-row-check { margin-left: auto; color: var(--md-sys-color-primary); }
 /* Two-line rows inside the plain radios: the item lays its default slot out
    as a flex row, so one block wrapper stacks the name over the provider.
    Font metrics (line-height, sizes, shape) stay the component's defaults. */
@@ -1775,10 +1767,10 @@ export function mduiHtml(wsUrl: string): string {
         </div>
         <div id="app-title" slot="title">
           <div id="model-picker">
-            <m3e-menu-trigger for="model-menu" aria-label="切换模型">
+            <button type="button" id="model-trigger" aria-label="切换模型">
               <span id="status-model">π-task remote</span>
               <span id="model-caret" aria-hidden="true"></span>
-            </m3e-menu-trigger>
+            </button>
           </div>
           <span id="status-ctx"></span>
         </div>
@@ -1839,18 +1831,18 @@ export function mduiHtml(wsUrl: string): string {
 
   <!-- Notifications dropdown: the toggle plus the history list, nothing
        else — appearance and behaviour settings live in #settings-panel. -->
-  <div id="notif-panel" aria-hidden="true">
+  <m3e-bottom-sheet id="notif-panel" modal handle handle-label="通知面板拖拽手柄">
     <div id="notif-toggle-row">
       <span id="notif-title">通知</span>
       <m3e-switch id="notif-toggle"></m3e-switch>
     </div>
     <m3e-list id="notif-list"></m3e-list>
-  </div>
+  </m3e-bottom-sheet>
 
   <!-- Settings dropdown: appearance and behaviour only. The theme is a
        three-way connected button group (light / dark / auto) instead of the
        old cycling button — one glance shows the current mode. -->
-  <div id="settings-panel" aria-hidden="true">
+  <m3e-bottom-sheet id="settings-panel" modal handle handle-label="设置面板拖拽手柄">
     <div id="settings-title">设置</div>
     <div class="settings-row">
       <span>深浅色模式</span>
@@ -1878,15 +1870,16 @@ export function mduiHtml(wsUrl: string): string {
       <span>Thinking 自动收起</span>
       <m3e-switch id="thinking-collapse"></m3e-switch>
     </div>
-  </div>
+  </m3e-bottom-sheet>
 
-  <!-- Model picker menu (m3e-menu): anchored above/below the app-bar pill by
-       the library's anchoring, opened by the nested m3e-menu-trigger. Fed by
-       the models frame (authed catalogue + current spec) rendered as radio
-       items; choosing one sends set_model, and the fresh frame that answers
+  <!-- Model picker: a modal bottom sheet opened by the app-bar pill. Fed by
+       the models frame (authed catalogue + current spec) rendered as rows;
+       choosing one sends set_model, and the fresh frame that answers
        re-renders the tick — no optimistic check, so a rejected switch can't
-       leave the menu lying. -->
-  <m3e-menu id="model-menu" aria-label="切换模型"></m3e-menu>
+       leave the list lying. -->
+  <m3e-bottom-sheet id="model-menu" modal handle handle-label="模型列表拖拽手柄" aria-label="切换模型">
+    <div id="model-list"></div>
+  </m3e-bottom-sheet>
 
   <!-- Prompt dialog: shown when pi asks for user input -->
   <m3e-dialog id="prompt-card">
@@ -1982,6 +1975,25 @@ function stage0Logic(wsUrl: string): string {
     const notifTitle   = document.getElementById('notif-title');
     const modelPicker  = document.getElementById('model-picker');
     const modelMenu    = document.getElementById('model-menu');
+    const modelList    = document.getElementById('model-list');
+    const modelTrigger = document.getElementById('model-trigger');
+    /* Detents as a JS property, not the attribute: the component parses the
+       attribute's comma string into ONE detent ("fit,") rather than two.
+       The ladder is fit → half → full, so a short panel (settings, an empty
+       notification list) hugs its content instead of opening half the screen
+       with dead space above it, and a long one (the model list) can still be
+       dragged taller. 'fit' is measured at open time, which is exactly when
+       renderModelMenu()/renderNotifList() have just run.
+       Must run AFTER upgrade: these elements exist in the initial HTML, but
+       m3e-bottom-sheet is loaded lazily, so at parse time they are plain
+       HTMLElements with no detents property — assigning earlier would be a
+       no-op on a native element. */
+    customElements.whenDefined('m3e-bottom-sheet').then(() => {
+      for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
+        const el = document.getElementById(id);
+        if (el) el.detents = ['fit', 'half', 'full'];
+      }
+    }).catch(() => {});
     const drawer       = document.getElementById('drawer');
     const menuBtn      = document.getElementById('menu-btn');
     const drawerClose  = document.getElementById('session-drawer-close');
@@ -2116,6 +2128,7 @@ function stage0Logic(wsUrl: string): string {
     import('https://esm.sh/@m3e/web@2.7.9/form-field').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/textarea-autosize').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/theme').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/bottom-sheet').catch(() => {});
 
     const SPIN = '\u280B\u2819\u2839\u2838\u283C\u2834\u2826\u2827\u2807\u280F';
     let spinIdx = 0, spinTimer = null;
@@ -2883,17 +2896,17 @@ function stage0Logic(wsUrl: string): string {
       notifToggle.checked = on;
       updateThinkingCollapseSwitch();
     }
+    // The sheets own their open state now (show/hide), so these only refresh
+    // content before showing and track the flag the app bar mirrors.
     function setNotifOpen(open) {
       notifOpen = open;
-      notifPanel.classList.toggle('open', open);
-      notifPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
-      if (open) { renderNotifList(); updateBell(); }
+      if (open) { renderNotifList(); updateBell(); notifPanel.show(); }
+      else notifPanel.hide();
     }
     function setSettingsOpen(open) {
       settingsOpen = open;
-      settingsPanel.classList.toggle('open', open);
-      settingsPanel.setAttribute('aria-hidden', open ? 'false' : 'true');
-      if (open) updateThinkingCollapseSwitch();
+      if (open) { updateThinkingCollapseSwitch(); settingsPanel.show(); }
+      else settingsPanel.hide();
     }
     thinkingCollapse.addEventListener('change', () => {
       localStorage.setItem(THINKING_COLLAPSE_KEY, thinkingCollapse.checked ? '1' : '0');
@@ -2962,7 +2975,7 @@ function stage0Logic(wsUrl: string): string {
         }).then((r) => r.ok));
     }
     function closeModelMenu() {
-      if (modelMenuOpen) modelMenu.hide(false);
+      if (modelMenuOpen) modelMenu.hide();
     }
     notifBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -2976,65 +2989,82 @@ function stage0Logic(wsUrl: string): string {
       setNotifOpen(false);
       setSettingsOpen(!settingsOpen);
     });
-    document.addEventListener('click', (e) => {
-      if (notifOpen && !notifPanel.contains(e.target) && e.target !== notifBtn) {
-        setNotifOpen(false);
-      }
-      if (settingsOpen && !settingsPanel.contains(e.target) && e.target !== settingsBtn) {
-        setSettingsOpen(false);
-      }
-    });
+    // A modal sheet is dismissed by its scrim, its drag handle or Escape, none
+    // of which go through the buttons — so the flags follow the sheet's own
+    // lifecycle events instead of a document click-outside handler.
+    notifPanel.addEventListener('closed', () => { notifOpen = false; });
+    settingsPanel.addEventListener('closed', () => { settingsOpen = false; });
+    notifPanel.addEventListener('opened', () => { notifOpen = true; });
+    settingsPanel.addEventListener('opened', () => { settingsOpen = true; });
     notifToggle.addEventListener('change', togglePush);
     updateBell();
 
+    // The model pill is a plain button now: the sheet it opens is modal, so
+    // there is nothing to anchor and no menu trigger to nest.
+    modelTrigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (modelMenuOpen) { modelMenu.hide(); return; }
+      modelMenu.show();
+    });
+
     // ───────────── Model picker menu ─────────────
     // Fed by the server's models frame (on connect, on session_start and after
-    // each switch). Rendered as m3e-menu-item-radio rows inside the anchored
-    // m3e-menu; choosing one sends set_model, and the fresh frame that comes
-    // back re-renders the tick — no optimistic check, so a rejected switch
-    // can't leave the menu lying.
+    // each switch). Rendered as plain rows inside a modal bottom sheet;
+    // choosing one sends set_model, and the fresh frame that comes back
+    // re-renders the tick — no optimistic check, so a rejected switch can't
+    // leave the list lying.
     function escAttr(s) {
       return escHtml(s).replace(/"/g, '&quot;');
     }
     function renderModelMenu() {
       if (!modelCatalog.models.length) {
-        modelMenu.innerHTML = '<div id="model-empty">暂无可切换的模型</div>';
+        modelList.innerHTML = '<div id="model-empty">暂无可切换的模型</div>';
         return;
       }
       let html = '';
       for (const md of modelCatalog.models) {
         const cur = md.spec === modelCatalog.current;
         const provider = md.spec.split('/')[0] || md.spec;
-        html += '<m3e-menu-item-radio data-spec="' + escAttr(md.spec) + '"'
-              + (cur ? ' checked' : '') + '>'
-              // Single root child: the item lays its default-slot content out
-              // as a flex ROW (leading check + label), so the two text lines
-              // must live inside one wrapper to stack vertically.
+        // A plain button row inside the sheet: m3e-menu-item-radio only makes
+        // sense inside an m3e-menu, and the sheet is not one.
+        html += '<button type="button" class="model-row' + (cur ? ' current' : '') + '"'
+              + ' data-spec="' + escAttr(md.spec) + '"'
+              + (cur ? ' aria-current="true"' : '') + '>'
               + '<span class="model-row-main">'
               + '<span class="model-row-name">' + escHtml(md.name) + '</span>'
               + '<span class="model-row-spec">' + escHtml(provider) + '</span>'
               + '</span>'
-              + '</m3e-menu-item-radio>';
+              + (cur ? '<m3e-icon class="model-row-check" name="check"></m3e-icon>' : '')
+              + '</button>';
       }
-      modelMenu.innerHTML = html;
+      modelList.innerHTML = html;
     }
     // The trigger opens/closes the menu; we only mirror the state onto the
     // pill (tonal highlight + caret flip) and refresh the rows on open.
-    modelMenu.addEventListener('toggle', () => {
-      const open = modelMenu.isOpen;
-      modelMenuOpen = open;
-      modelPicker.classList.toggle('open', open);
-      if (open) { setNotifOpen(false); renderModelMenu(); }
+    // Bottom-sheet lifecycle, not the menu's toggle: the sheet owns the open
+    // state, so the pill mirrors opened/closed and refreshes on opening.
+    modelMenu.addEventListener('opening', () => {
+      setNotifOpen(false);
+      setSettingsOpen(false);
+      renderModelMenu();
+    });
+    modelMenu.addEventListener('opened', () => {
+      modelMenuOpen = true;
+      modelPicker.classList.add('open');
+    });
+    modelMenu.addEventListener('closed', () => {
+      modelMenuOpen = false;
+      modelPicker.classList.remove('open');
     });
     modelMenu.addEventListener('click', (e) => {
-      const row = e.target && e.target.closest ? e.target.closest('m3e-menu-item-radio') : null;
+      const row = e.target && e.target.closest ? e.target.closest('.model-row') : null;
       if (!row) return;
       const spec = row.getAttribute('data-spec');
       if (!spec || !ws || ws.readyState !== 1) return;
       ws.send(JSON.stringify({ type: 'set_model', spec }));
       const chosen = modelCatalog.models.find((x) => x.spec === spec);
       showToast(chosen ? '切换模型：' + chosen.name : '切换模型…', 'info');
-      modelMenu.hide(false);
+      modelMenu.hide();
     });
 
     // ───────────── Session sidebar ─────────────
@@ -3731,7 +3761,10 @@ function stage0Logic(wsUrl: string): string {
             const cur = modelCatalog.models.find((x) => x.spec === modelCatalog.current);
             if (cur) setModelName(cur.name);
           }
-          if (modelMenuOpen) renderModelMenu();
+          // The sheet's own flag, not modelMenuOpen: the opened event has not
+          // fired yet while the opening animation runs, so a catalogue that
+          // arrives during it would otherwise leave the list showing stale rows.
+          if (modelMenu.open) renderModelMenu();
           break;
         case 'sessions':
           sessionData = {current: m.current || null, sessions: m.sessions || []};

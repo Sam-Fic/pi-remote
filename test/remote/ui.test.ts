@@ -322,6 +322,59 @@ describe('mduiHtml()', () => {
         expect(img![0]).toContain('border-radius: inherit')
     })
 
+    it('turns the three app-bar panels into modal bottom sheets with drag handles', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
+            // The element itself is the sheet: modal + handle + an accessible
+            // handle label are the three attributes the component needs.
+            const m = out.match(new RegExp(`<m3e-bottom-sheet id="${id}"([^>]*)>`))
+            expect(m).not.toBeNull()
+            expect(m![1]).toContain('modal')
+            expect(m![1]).toContain('handle')
+            expect(m![1]).toMatch(/handle-label="[^"]+"/)
+        }
+        // The command suggestions are NOT among them: a typeahead must stay
+        // anchored to the field it completes.
+        expect(out).not.toContain('<m3e-bottom-sheet id="cmd-suggestions"')
+    })
+
+    it('opens the panels through the sheet API rather than a CSS class', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // No leftover .open toggling for these three panels.
+        expect(out).not.toContain("notifPanel.classList.toggle('open'")
+        expect(out).not.toContain("settingsPanel.classList.toggle('open'")
+        // The model pill is a plain button now, and the sheets are shown/hidden
+        // by their own API.
+        expect(out).toContain('id="model-trigger"')
+        expect(out).toMatch(/notifPanel\.show\(\)/)
+        expect(out).toMatch(/settingsPanel\.show\(\)/)
+        expect(out).toMatch(/modelMenu\.show\(\)/)
+    })
+
+    it('derives the detent ladder after the sheet upgrades', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // These elements are plain HTMLElements until the lazily loaded module
+        // upgrades them, so assigning earlier would be a silent no-op.
+        expect(out).toContain("customElements.whenDefined('m3e-bottom-sheet')")
+        // fit first: a short panel hugs its content instead of opening at half
+        // the screen with dead space above it.
+        const m = out.match(/el\.detents = \[([^\]]*)\]/)
+        expect(m).not.toBeNull()
+        expect(m![1]).toContain("'fit'")
+        expect(m![1]).toContain("'half'")
+        expect(m![1]).toContain("'full'")
+    })
+
+    it('syncs the sheet state flags from lifecycle events, not click-outside', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // A modal sheet is dismissed by its scrim, its drag handle or Escape —
+        // none of which reach the buttons, so the flags follow the events.
+        expect(out).toContain("notifPanel.addEventListener('closed'")
+        expect(out).toContain("settingsPanel.addEventListener('closed'")
+        // The old document click-outside handler is gone.
+        expect(out).not.toContain('notifPanel.contains(e.target)')
+    })
+
     it('removes the form-field subscript row instead of leaving dead space', () => {
         // The reserved supporting-text row is what made the field host taller
         // than its visible box. hide-subscript is the component's own switch.
