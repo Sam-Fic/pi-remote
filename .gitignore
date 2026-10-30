@@ -11,3 +11,15 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Local verification scratch (probes, screenshots, harness runs)
+.verify-*
+
+# Build / tooling caches
+*.tsbuildinfo
+coverage/
+
+# Local secrets / environment overrides
+.env
+.env.local
+.env.*.local
