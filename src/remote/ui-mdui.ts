@@ -193,10 +193,8 @@ const CSS = `
     color: var(--md-sys-color-on-surface);
     /* Opens up when the loader appears, closes when it goes — same width
        arithmetic as the trailing slot. */
+    padding-inline-start: calc(var(--c-btn));
     transition: padding-inline-start 0.42s var(--m3e-spring-spatial);
-}
-#composer-bar.running #composer-pill {
-    padding-inline-start: var(--c-reserve);
 }
 m3e-icon-button#send-btn {
     /* In the corner, not beside: 8px from both inner edges of the pill, which
@@ -225,13 +223,10 @@ m3e-icon-button#send-btn.swapping m3e-icon {
     position: absolute;
     inset-inline-start: var(--c-inset);
     bottom: var(--c-inset);
-    display: none;
-    --m3e-loading-indicator-container-size: var(--c-btn);
-    --m3e-loading-indicator-size: calc(var(--c-btn) - 2 * var(--c-inset));
-    --m3e-loading-indicator-contained-container-color: var(--md-sys-color-primary);
-    --m3e-loading-indicator-contained-active-indicator-color: var(--md-sys-color-on-primary);
+    display: block;
+    width: var(--c-btn);
+    height: var(--c-btn);
 }
-#composer-bar.running #composer-loading { display: block; }
 /* "+" doubles as the close affordance of its own menu: the same glyph turns
    45deg into a ×, on the spatial spring. */
 #add-btn m3e-icon {
@@ -402,7 +397,7 @@ html, body {
     padding: 0;
     border: none;
     border-radius: 50%;
-    background: none;
+    background: var(--md-sys-color-surface-container-highest);
     color: var(--md-sys-color-on-surface-variant);
     cursor: pointer;
     opacity: 0;
@@ -1601,6 +1596,17 @@ m3e-card#status-panel {
     flex-direction: column; gap: 0.4rem;
     z-index: 60;
     overflow: hidden;
+    /* Rounded rectangle mask shield: clips scrolling content to the card's
+       rounded corners so partially visible rows never show straight edges. */
+}
+#notif-panel::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: calc(var(--_row-r) + var(--_gap));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline) 30%, transparent);
+    pointer-events: none;
+    z-index: 10;
 }
 #notif-panel.open { display: flex; }
 #settings-panel {
