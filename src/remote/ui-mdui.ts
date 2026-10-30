@@ -2063,7 +2063,8 @@ export function mduiHtml(wsUrl: string): string {
              them and the form-field would let the vibrant toolbar show
              through. -->
         <div id="composer-pill">
-          <m3e-loading-indicator id="composer-loading" variant="contained" aria-hidden="true"></m3e-loading-indicator>
+          <m3e-circular-progress-indicator id="composer-loading" variant="wavy" value="0" aria-label="上下文用量"></m3e-circular-progress-indicator>
+          <m3e-tooltip id="usage-tip" for="composer-loading" position="above" show-delay="200" hide-delay="0">上下文用量</m3e-tooltip>
           <!-- hide-subscript="always": this field has no supporting text, and the
                reserved row for it is what made the host taller than the visible
                box (and the buttons beside it look mismatched). -->
@@ -2210,7 +2211,7 @@ export function mduiHtml(wsUrl: string): string {
     <p class="q" id="session-delete-text"></p>
     <div slot="actions" end>
       <m3e-button id="session-delete-cancel" autofocus data-i18n="cancel">取消</m3e-button>
-      <m3e-button id="session-delete-confirm" variant="filled" data-i18n="delete">删除</m3e-button>
+      <m3e-button id="session-delete-confirm" variant="tonal" data-i18n="delete">删除</m3e-button>
     </div>
   </m3e-dialog>
 
