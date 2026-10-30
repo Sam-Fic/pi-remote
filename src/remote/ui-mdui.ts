@@ -2264,6 +2264,8 @@ function stage0Logic(wsUrl: string): string {
     const inputBar     = document.getElementById('input-bar');
     const composerBar  = document.getElementById('composer-bar');
     const composerPill = document.getElementById('composer-pill');
+    const composerLoading = document.getElementById('composer-loading');
+    const usageTip = document.getElementById('usage-tip');
     const addBtn       = document.getElementById('add-btn');
     const addMenu      = document.getElementById('add-menu');
     const galleryBtn   = document.getElementById('gallery-btn');
@@ -2842,6 +2844,10 @@ function stage0Logic(wsUrl: string): string {
         parts.push(fmtTokens(usage.tokens) + '/' + fmtTokens(usage.contextWindow));
       }
       statusCtx.textContent = parts.join(' · ');
+      // Update the composer's circular progress indicator and tooltip
+      const val = pct == null ? 0 : Math.round(pct);
+      if (composerLoading) composerLoading.value = val;
+      if (usageTip) usageTip.textContent = parts.join(' · ') || t('contextUsage');
     }
     function setModelName(name) {
       if (name === undefined || name === modelName) return;
@@ -3552,12 +3558,14 @@ function stage0Logic(wsUrl: string): string {
       // Tonal toggle: selected IS the open indicator, so the button reads as
       // pressed exactly while its panel is up. Multi-mode keeps the two
       // independent (opening settings need not close notifications).
+      notifBtn.toggleAttribute('selected', open);
       notifBtn.selected = open;
       if (open) { renderNotifList(); updateBell(); }
       openPanel('notif', open);
     }
     function setSettingsOpen(open) {
       settingsOpen = open;
+      settingsBtn.toggleAttribute('selected', open);
       settingsBtn.selected = open;
       if (open) { updateThinkingCollapseSwitch(); renderModelMenu(); }
       openPanel('settings', open);
@@ -3649,13 +3657,13 @@ function stage0Logic(wsUrl: string): string {
       if (modelMenuOpen) openPanel('model', false);
     }
     notifBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       closeModelMenu();
       setSettingsOpen(false);
       setNotifOpen(!notifOpen);
     });
     settingsBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+      e.stopImmediatePropagation();
       closeModelMenu();
       setNotifOpen(false);
       setSettingsOpen(!settingsOpen);
@@ -3680,8 +3688,8 @@ function stage0Logic(wsUrl: string): string {
     for (const name of ['notif', 'settings']) {
       const sheet = panels[name].sheet;
       if (!sheet) continue;
-      sheet.addEventListener('closed', () => { if (name === 'notif') notifOpen = false; else settingsOpen = false; });
-      sheet.addEventListener('opened', () => { if (name === 'notif') notifOpen = true; else settingsOpen = true; });
+      sheet.addEventListener('closed', () => { if (name === 'notif') { notifOpen = false; notifBtn.toggleAttribute('selected', false); notifBtn.selected = false; } else { settingsOpen = false; settingsBtn.toggleAttribute('selected', false); settingsBtn.selected = false; } });
+      sheet.addEventListener('opened', () => { if (name === 'notif') { notifOpen = true; notifBtn.toggleAttribute('selected', true); notifBtn.selected = true; } else { settingsOpen = true; settingsBtn.toggleAttribute('selected', true); settingsBtn.selected = true; } });
     }
     notifToggle.addEventListener('change', togglePush);
     updateBell();
