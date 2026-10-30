@@ -24,6 +24,7 @@
 import {renderModule} from './ui-render.js'
 import {highlightModule} from './ui-highlight.js'
 import {toolsModule} from './ui-tools.js'
+import {i18nModule} from './ui-i18n.js'
 
 const M3E_VERSION = '2.7.9'
 
@@ -55,50 +56,189 @@ const CSS = `
     --m3e-spring-fast: linear(0, 0.0134 1.85%, 0.0487 3.7%, 0.1664 7.4%, 0.5724 12.4%, 0.8029 15.9%, 0.9432 19.7%, 1.0292 23.8%, 1.0834 28.4%, 1.1068 32.8%, 1.1121 37.2%, 1.101 41.6%, 1.083 46%, 1.0605 50.9%, 1.0229 58.5%, 1.0039 66.2%, 0.9985 74%, 1.0011 84.6%, 1);
     --m3e-spring-spatial: linear(0, 0.0062 0.9%, 0.025 1.9%, 0.1 4.1%, 0.4174 8.7%, 0.6829 12.5%, 0.8764 16.4%, 0.9841 20.4%, 1.0665 24.6%, 1.1161 29.1%, 1.1349 33.9%, 1.1353 38.4%, 1.1266 42.9%, 1.1049 48%, 1.0581 55.5%, 1.0254 62.4%, 1.0072 70.1%, 0.9997 79.5%, 1 100%);
 }
-/* M3 Expressive press (shape morph) is native to the m3e buttons.
-   Only the send button needs our own transform spring for the
-   send<->stop 90deg swing. */
-
-/* ONE composer control size. Both buttons are exactly the text field's
-   single-line height (56px — m3e's .content min-height; the host equals the
-   visible box because hide-subscript="always" removes the reserved row, see
-   the form-field rule below), and NEITHER of them grows when the textarea
-   goes multiline: a four-line message must not turn the send capsule into a
-   slab. align-self:center keeps them on the field's midline instead of
-   riding its bottom edge, which is what a stretched/previously-end-aligned
-   button did. The tokens are set on the row so both controls read the same
-   value; width/height are also spelled out because the host's intrinsic
-   box would otherwise win over the container-height token.
-   The value is px, not rem, on purpose: m3e's own .content min-height is a
+/* ── Composer: two concentric capsules ─────────────────────────────────────
+   Outer = m3e-toolbar (vibrant), inner = the input pill, and the trailing
+   button is STACKED in the pill's bottom-right corner rather than standing
+   beside it. Only the first number below is typed in; every other radius is
+   derived from it, so the relation that makes the two capsules read as one
+   object survives a change to any of them:
+     outer 36  →  inner 36 − 8 = 28  →  button end inset 28 − 40/2 = 8
+   The outer radius must be FIXED. The library's own rounded shape is
+   corner.full, and a full radius on a box that grows to six lines stretches
+   into a giant capsule — the inner capsule is then nowhere near its corner.
+   Values are px, not rem, on purpose: m3e's form-field min-height is a
    hardcoded 56px, so a root font-size change would otherwise desync the
-   controls from the field they sit beside. */
-#composer-row { --composer-control: 56px; }
+   capsules from the field they wrap. */
+#composer-bar {
+    --c-outer-r: 36px;
+    --c-gap: 8px;
+    --c-inner-r: calc(var(--c-outer-r) - var(--c-gap));
+    --c-btn: 40px;
+    --c-inset: calc(var(--c-inner-r) - var(--c-btn) / 2);
+    --c-field-min: 56px;
+    --c-bar-min: calc(var(--c-field-min) + 2 * var(--c-gap));
+    /* One button's worth of room, as the pill's reserved trailing slot:
+       the disc plus an inset on each side of it. */
+    --c-reserve: calc(var(--c-btn) + 2 * var(--c-inset));
+
+    display: block;
+    width: 100%;
+    min-height: var(--c-bar-min);
+    box-sizing: border-box;
+    --m3e-toolbar-rounded-shape: var(--c-outer-r);
+    --m3e-toolbar-rounded-padding: var(--c-gap);
+    --m3e-toolbar-spacing: 4px;
+    /* The row's min-height is this token plus a density term, which is 0 at
+       the default density scale: 56 + 2×8 padding = --c-bar-min exactly, so a
+       one-line composer is a true capsule and a six-line one is a rounded
+       rectangle. */
+    --m3e-toolbar-size: var(--c-field-min);
+    --m3e-toolbar-vibrant-container-color: var(--md-sys-color-primary-container);
+    --m3e-toolbar-vibrant-color: var(--md-sys-color-on-primary-container);
+}
+/* The toolbar's own .base pins every icon button to a 48px interactive
+   minimum, and slotted content inherits that declaration — a value set on
+   #composer-bar would be shadowed by it. Declaring on each button's host
+   element wins, and 40 is what makes the inset arithmetic above true. */
+#composer-bar m3e-icon-button {
+    --_icon-button-size: var(--c-btn);
+    --_icon-button-min-size: var(--c-btn);
+    --m3e-icon-button-container-height: var(--c-btn);
+    /* Always a plain circle, pressed or not. The pressed rule reads the
+       size-specific morph token BEFORE the generic one, so overriding only the
+       generic name leaves the plate morphing to a squircle mid-tap. Every
+       composer button is size="small"; the other sizes are pinned too so the
+       override survives a size change. */
+    --m3e-icon-button-shape-round: 999px;
+    --m3e-icon-button-shape-square: 999px;
+    --m3e-icon-button-shape-pressed-morph: 999px;
+    --m3e-icon-button-extra-small-shape-pressed-morph: 999px;
+    --m3e-icon-button-small-shape-pressed-morph: 999px;
+    --m3e-icon-button-medium-shape-pressed-morph: 999px;
+    --m3e-icon-button-large-shape-pressed-morph: 999px;
+}
+.composer-slot { flex: 0 0 auto; }
+/* The model button is the panel's only entry point now that the app-bar pill
+   is gone, so it has to answer for the open state the pill used to carry. A
+   tonal disc mixed from the toolbar's own foreground ink — hierarchy by color,
+   never a stroke. The standard variant never reads
+   --m3e-icon-button-container-color (only filled/tonal paint a container), so
+   the disc goes on the HOST, which is the button's painted surface — same
+   approach the copy buttons take. */
+#composer-bar #model-btn.open {
+    background: color-mix(in srgb, var(--md-sys-color-on-primary-container) 20%, transparent);
+    border-radius: 999px;
+}
+/* Left action group. The toolbar row is align-items:center, so both this and
+   the pill must be pulled to the bottom edge explicitly: otherwise the
+   buttons sit on the field's midline and hang in the air as it grows. With
+   8px of its own bottom padding a button's centre lands 16px from the bar's
+   edge — the same 16px it has from the top and the bottom, which is what
+   makes the discs concentric with the outer R36 caps. */
+#composer-actions {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--m3e-toolbar-spacing);
+    flex: 0 0 auto;
+    align-self: flex-end;
+    padding-bottom: var(--c-gap);
+    margin-inline-start: var(--c-gap);
+    max-width: 10rem;
+    overflow: hidden;
+    transition: max-width 0.42s var(--m3e-spring-spatial),
+                margin-inline-start 0.42s var(--m3e-spring-spatial),
+                /* Not the spring: it overshoots the 4px by ~1.6px, which would
+                   push the pill's left cap through the outer capsule's rim
+                   mid-collapse. The width carries the motion; this only has to
+                   land on the concentric inset. */
+                margin-inline-end 0.42s linear,
+                opacity 0.2s linear;
+}
+/* Narrow screens only, and only while the field is focused with text in it:
+   the group gives its width to the field. The collapse is layout-driven
+   (max-width on the group, the pill is the row's flex:1 child) — no animated
+   size on a clipped element, which is what cut the capsule ends flat in the
+   reference's porting notes. */
+#composer-bar.compact #composer-actions {
+    max-width: 0;
+    margin-inline-start: 0;
+    /* A zero-width child still costs the row one 4px gap, which would land the
+       pill's left cap 12px from the outer capsule instead of the concentric 8.
+       Pulling the group's trailing edge back by exactly that gap cancels it. */
+    margin-inline-end: calc(-1 * var(--m3e-toolbar-spacing));
+    opacity: 0;
+    pointer-events: none;
+}
+/* The inner capsule. It paints the surface itself and the form-field inside
+   is made transparent, so there is exactly ONE opaque layer under the field,
+   the loader and the button — with two half-alpha layers cross-fading, the
+   vibrant toolbar behind would show through the middle of the pill. */
+#composer-pill {
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    flex: 1 1 auto;
+    min-width: 0;
+    align-self: flex-end;
+    min-height: var(--c-field-min);
+    box-sizing: border-box;
+    padding-inline-end: var(--c-reserve);
+    border-radius: var(--c-inner-r);
+    /* Same as the app base surface (body/#root), so the capsule reads as the
+       input field cut straight out of the page rather than a gray tray sitting
+       inside the vibrant ring. Still OPAQUE — the comment above explains why a
+       transparent fill would let the vibrant toolbar bleed through the middle
+       of the pill. */
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    /* Opens up when the loader appears, closes when it goes — same width
+       arithmetic as the trailing slot. */
+    transition: padding-inline-start 0.42s var(--m3e-spring-spatial);
+}
+#composer-bar.running #composer-pill {
+    padding-inline-start: var(--c-reserve);
+}
 m3e-icon-button#send-btn {
-    /* Stadium, not a circle: wider than the control height. */
-    width: 5.25rem;
-    height: var(--composer-control);
-    min-height: var(--composer-control);
-    align-self: center;
-    --m3e-icon-button-container-height: var(--composer-control);
+    /* In the corner, not beside: 8px from both inner edges of the pill, which
+       for a single line puts the disc exactly on the field's midline. */
+    position: absolute;
+    inset-inline-end: var(--c-inset);
+    bottom: var(--c-inset);
+    z-index: 1;
 }
-m3e-icon-button#attach-btn {
-    /* Square = a true circle at the control size, matching the field it sits
-       beside rather than the smaller 40px default tonal circle. */
-    width: var(--composer-control);
-    height: var(--composer-control);
-    min-height: var(--composer-control);
-    align-self: center;
-    --m3e-icon-button-container-height: var(--composer-control);
+/* send ⇄ stop is a morph, not a swap-in-place: the glyph shrinks and fades
+   out, the new one comes back up on the fast spring. */
+#send-btn m3e-icon {
+    transition: transform 0.28s var(--m3e-spring-fast), opacity 0.12s linear;
 }
-m3e-icon-button#send-btn:active {
-    transform: scale(0.94);
+m3e-icon-button#send-btn.swapping m3e-icon {
+    transform: scale(0.8);
+    opacity: 0;
 }
-/* Running swings the GLYPH 90deg, not the button — a rotated capsule
-   stands on end (84px tall), which breaks the input-height match. The
-   component's ::slotted transform var keeps the spring swing. */
-m3e-icon-button#send-btn.running,
-m3e-icon-button#send-btn.armed {
-    --_icon-button-icon-transform: rotate(90deg);
+/* The streaming loader takes the field's leading slot as a 40px disc sitting
+   at the SAME concentric offset as the send button — inset by exactly
+   --c-inset (8px) from both the left cap and the bottom edge, so the two
+   discs share the pill's corner arc centres. Bottom-aligned (not centred) to
+   match #send-btn; the field grows upward, and both stay pinned to the
+   base line. */
+#composer-loading {
+    position: absolute;
+    inset-inline-start: var(--c-inset);
+    bottom: var(--c-inset);
+    display: none;
+    --m3e-loading-indicator-container-size: var(--c-btn);
+    --m3e-loading-indicator-size: calc(var(--c-btn) - 2 * var(--c-inset));
+    --m3e-loading-indicator-contained-container-color: var(--md-sys-color-primary);
+    --m3e-loading-indicator-contained-active-indicator-color: var(--md-sys-color-on-primary);
+}
+#composer-bar.running #composer-loading { display: block; }
+/* "+" doubles as the close affordance of its own menu: the same glyph turns
+   45deg into a ×, on the spatial spring. */
+#add-btn m3e-icon {
+    transition: transform 0.35s var(--m3e-spring-spatial);
+}
+m3e-icon-button#add-btn.open m3e-icon {
+    transform: rotate(45deg);
 }
 
 /* mdui 2.x does not load the Material Icons font itself — without this,
@@ -162,10 +302,9 @@ html, body {
 .scroll-thumb {
     position: absolute;
     width: 5px;
-    /* Half the width — the round cap. On the rounded command panel the thumb
-       is TRANSLATED so these caps' centers land exactly on the card corner
-       arcs' centers (see attachScrollbar's rightInset/inset): with a 28px
-       corner, both sit 28 - 2.5 = 25.5px from the edges. */
+    /* Half the width — the round cap. Where a thumb is overlaid on a rounded
+       host, attachScrollbar's inset/rightInset options exist so these caps'
+       centers land on the host's corner arcs' centers (corner − half width). */
     border-radius: 2.5px;
     background: color-mix(in srgb, var(--md-sys-color-on-surface-variant) 55%, transparent);
     opacity: 0;
@@ -198,12 +337,18 @@ html, body {
    bottom of the document instead of the viewport. */
 #main-col {
     display: grid;
+    /* A track that starts at auto is minmax(auto, auto): its base size is the
+       widest item's min-content, so the composer row (whose textarea still has
+       an intrinsic 238px) would push the track to 482px on a 390px phone and the
+       send button would land off-screen. minmax(0, 1fr) lets the track shrink to
+       the container, and every box below it already knows how to follow. */
+    grid-template-columns: minmax(0, 1fr);
     grid-template-rows: minmax(0, 1fr) auto auto auto;
     height: 100%;
     min-height: 0;
-    /* Without min-width:0 the grid column adopts the input bar's min-content
-       (~394px, set by the textarea's default cols), forcing horizontal
-       overflow on narrow phones even though the field itself can shrink. */
+    /* The same trap one level up: as a #root grid item its automatic minimum
+       size is its own min-content, so without min-width:0 the column could not
+       shrink below the composer's intrinsic width either. */
     min-width: 0;
 }
 #drawer { --m3e-drawer-container-width: min(84vw, 20rem); }
@@ -223,46 +368,32 @@ html, body {
 }
 #session-drawer-title { font-size: 0.95rem; font-weight: 600; }
 #session-list { flex: 1; min-height: 0; overflow-y: auto; }
-#session-list m3e-nav-menu-item {
-    /* Two-line rows: the default fixed height would clip the subtitle. */
-    --m3e-nav-menu-item-height: auto;
-}
-#session-list .s-label {
-    /* Anchor box for the per-row trash button. flex:1 makes the slotted label
-       fill the plate's content width (as a flex item it would otherwise shrink
-       to the text width and park the button mid-row); the extra right padding
-       keeps the title's 2-line clamp from running underneath the button. */
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    gap: 0.125rem;
-    min-width: 0;
-    padding-block: 0.375rem;
-    padding-right: 2rem;
-}
 #session-list .s-title {
     font-size: 0.875rem;
     line-height: 1.3;
+    /* One line, ellipsised, and the trash on every row lands on the same x.
+       The option's text column (div.content, shadow DOM, no ::part hook) is a flex
+       item with min-width: auto, so this span's min-content decides how far that
+       column — and the trailing button behind it — gets pushed: a long title took
+       210px where the other rows got 196px, sliding its trash 7px right.
+       Inline-size containment drops the contribution to zero, so the column always
+       fills the row exactly and the clamp does the truncating. */
     display: -webkit-box;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    contain: inline-size;
 }
 #session-list .s-sub { font-size: 0.72rem; color: var(--md-sys-color-on-surface-variant); }
-/* Per-row delete: a 28px icon button parked in the row plate's right padding,
-   revealed on row hover or keyboard focus, always visible on hover-less
-   (touch) devices — the same treatment the code block's copy button gets.
-   Present on every row; the CURRENT row's button is disabled while the agent
-   is replying (the server refuses that window too). It must stay INSIDE the
-   slotted .s-label's box: the component's internal .label wrapper clips
-   overflow, so a negative right offset would have its right half amputated. */
+/* Per-row delete: a 28px icon button in the row's trailing slot, revealed on
+   row hover or keyboard focus, always visible on hover-less (touch) devices —
+   the same treatment the code block's copy button gets. Present on every row;
+   the CURRENT row's button is disabled while the agent is replying (the server
+   refuses that window too). The list option reserves the trailing column
+   itself, so the button needs no anchor box and no overflow escape. */
 #session-list .s-del {
     --_d: 1.75rem;
-    position: absolute;
-    right: 0.25rem;
-    top: 50%;
-    transform: translateY(-50%);
+    flex: none;
     width: var(--_d);
     height: var(--_d);
     display: inline-flex;
@@ -277,8 +408,8 @@ html, body {
     opacity: 0;
     transition: opacity 150ms, color 150ms;
 }
-#session-list m3e-nav-menu-item:hover .s-del,
-#session-list m3e-nav-menu-item:focus-within .s-del,
+#session-list m3e-list-option:hover .s-del,
+#session-list m3e-list-option:focus-within .s-del,
 #session-list .s-del:focus-visible { opacity: 1; }
 #session-list .s-del:hover { color: var(--md-sys-color-error); }
 #session-list .s-del m3e-icon { font-size: 1rem; }
@@ -288,8 +419,8 @@ html, body {
 /* Disabled (current row mid-run): stay faded even on row hover, and the
    error hover tint is off — it must read as unavailable, not armed. */
 #session-list .s-del:disabled,
-#session-list m3e-nav-menu-item:hover .s-del:disabled,
-#session-list m3e-nav-menu-item:focus-within .s-del:disabled {
+#session-list m3e-list-option:hover .s-del:disabled,
+#session-list m3e-list-option:focus-within .s-del:disabled {
     opacity: 0.35;
     cursor: not-allowed;
 }
@@ -318,87 +449,59 @@ html, body {
 :root {
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    /* Everything that hangs below the bar (the context wave, the chat's first
+       row, the anchored dropdowns) clears its full height. The small app-bar's
+       own 64px is only the floor: with a title AND a subtitle slotted, the bar
+       is content-sized, so JS re-measures it and writes the real number here. */
+    --_topbar-h: 4rem;
+    /* The same problem at the other end, and worse: the band under the chat is
+       the composer plus the held bar plus the task panel, the field grows as
+       you type, and the attach tray appears and goes. The chat scrolls beneath
+       all of it, so the bottom clearance is measured in JS and published here
+       for the scroller's padding, the fade's anchor and the fab's seat. The
+       default is the composer at rest: 72px bar + 12px top pad + 16px bottom. */
+    --_composer-h: 100px;
+    /* How far ABOVE that band the dissolve already begins. The capsule is
+       opaque and covers most of the band, so a ramp that waited for the
+       band's top edge would do all its fading behind paint — the chat has to
+       be visibly thinning while it is still in the clear. */
+    --_fade-h: 1.5rem;
 }
 /* The app bar stays a quiet neutral band — the expressive accents live in
    the composer, avatars and the task panel instead. */
 /* The bar's height, surface and padding are owned by <m3e-app-bar> now. These
-   three slotted clusters just lay out their own content; M3E's template slots
-   them into leading / title / trailing. */
+   four slotted clusters just lay out their own content; M3E's template slots
+   them into leading / title / subtitle / trailing. */
 #app-bar { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
-#app-title { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+#app-title { display: flex; align-items: center; min-width: 0; }
+#app-subtitle { display: flex; align-items: center; gap: 0.5rem; min-width: 0; }
 #app-actions { display: flex; align-items: center; gap: 0.4rem; flex-shrink: 0; }
-/* The model name takes the old title slot; falls back to the app name
-   (muted) before the first snapshot reports a model. The pill is the
-   activation surface for the model sheet: a plain button opening a modal
-   bottom sheet, with a tonal background (hierarchy by color, never a
-   hairline stroke) whose caret flips while the sheet is open. */
-#model-picker {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    /* Shrink-to-fit so the name isn't starved by the .grow spacer; long
-       names still ellipsize when the row genuinely runs out of room. */
-    flex: 0 1 auto;
-    min-width: 0;
-    padding: 0.2rem 0.7rem 0.2rem 0.65rem;
-    border-radius: 999px;
-    cursor: pointer;
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 7%, transparent);
-    transition: background 200ms;
-}
-/* The trigger is a pure behavior wrapper: dissolve its box so the name and
-   caret participate directly in the pill's flex layout. */
-#model-picker #model-trigger {
-    display: contents;
-    /* The pill carries the padding and the hit area; a nested button must not
-       add a UA border, background or its own focus ring on top of it. */
-    border: 0; background: none; color: inherit; font: inherit; padding: 0;
-}
-#model-picker:hover {
-    background: color-mix(in srgb, var(--md-sys-color-on-surface) 13%, transparent);
-}
-#model-picker.open {
-    background: var(--md-sys-color-secondary-container);
-}
-#status-model {
-    /* Information, not a wordmark: the model name in the platform's UI font
-       (the old rounded display face was leftover title styling). */
+/* The bar reports, it no longer acts: line one is the conversation's title,
+   line two the model serving it (switching models lives on the composer). Both
+   lines have to give way — the title of an unsaved conversation IS its first
+   message, which has no natural length — and neither may push the trailing
+   icons off screen, hence min-width: 0 on the slot wrappers plus ellipsis on
+   the text itself. */
+#chat-title {
     font-size: 1.05rem;
     font-weight: 650;
     letter-spacing: 0.01em;
-    line-height: 1.4;
+    line-height: 1.35;
     color: var(--md-sys-color-on-surface);
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-#model-picker.open #status-model {
-    color: var(--md-sys-color-on-secondary-container);
-}
-#model-caret {
-    /* Same pure-CSS chevron as the thinking/tool headers (see --_chev-shift
-       there): an L of side s and stroke t, centroid pulled back 0.25*(s-t)
-       so the visual mass rides the flex centerline. Closed points down,
-       open flips 180deg up — same spring as the card chevrons. */
-    --_chev-shift: calc((0.4rem - 1.5px) / -4);
-    width: 0.4rem; height: 0.4rem;
-    border-right: 1.5px solid currentColor;
-    border-bottom: 1.5px solid currentColor;
-    transform: rotate(45deg) translate(var(--_chev-shift), var(--_chev-shift));
-    transition: transform 350ms var(--m3e-spring-fast);
-    flex-shrink: 0;
+/* One step down from the title: same platform UI font, no weight, muted. */
+#status-model {
+    font-size: 0.78rem;
+    line-height: 1.4;
     color: var(--md-sys-color-on-surface-variant);
-}
-#model-picker.open #model-caret {
-    transform: rotate(-135deg) translate(var(--_chev-shift), var(--_chev-shift));
-    color: var(--md-sys-color-on-secondary-container);
-}
-#status-model.fallback {
-    color: var(--md-sys-color-on-surface-variant);
-    font-weight: 550;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 #status-ctx {
     font-size: 0.78rem;
@@ -418,22 +521,10 @@ html, body {
     --md-sys-color-on-surface-variant: var(--md-sys-color-on-surface);
 }
 #notif-btn { flex-shrink: 0; }
-/* The bell lights up while push notifications are enabled — passive,
-   glanceable, no tooltip needed. */
-#notif-btn.on { --md-sys-color-on-surface-variant: var(--md-sys-color-primary); }
-/* Status readout, not an action: a plain pill instead of mdui-chip, whose
-   button internals bring ripple/press affordances a passive indicator
-   must not have. Neutral tonal pill against the color field. */
-#status-chip {
-    padding: 0.3rem 0.85rem;
-    border-radius: 999px;
-    background-color: var(--md-sys-color-surface-container-highest);
-    color: var(--md-sys-color-on-surface-variant);
-    font-size: 0.8rem;
-    line-height: 1.2;
-    flex-shrink: 0;
-    user-select: none;
-}
+/* Inside m3e-button-group, the two are tonally-tinted toggles; the group owns
+   the spacing and the shared shape, so no per-button margin is needed. The
+   selected (pressed) look is the library's own tonal container. */
+#app-actions m3e-button-group { flex-shrink: 0; }
 #status-dot {
     width: 0.5rem; height: 0.5rem; border-radius: 50%;
     background: var(--md-sys-color-outline);
@@ -450,10 +541,10 @@ html, body {
    error-red once usage runs hot (the old gradient's danger signal). */
 #ctx-stack {
     position: absolute;
-    /* Sits in the band just below M3E's small app-bar (whose host is 64px =
-       4rem). Below the bar's z-index (30), so it must clear its full height
-       or the bar would paint over the wave. */
-    top: calc(var(--safe-top) + 4rem);
+    /* Sits in the band just below the app bar (whose rendered height the
+       --_topbar-h token carries). Below the bar's z-index (30), so it must
+       clear its full height or the bar would paint over the wave. */
+    top: calc(var(--safe-top) + var(--_topbar-h));
     left: 0; right: 0;
     height: 0.5rem;
     display: block;
@@ -500,14 +591,35 @@ html, body {
 #ctx-stack.live #ctx-bar-flat { opacity: 0; }
 /* The top-app-bar is absolutely positioned inside this wrapper (its
    scroll-target mode requires a relative, overflow-hidden parent) and the
-   chat scrolls beneath it. */
-#chat-wrap { position: relative; min-height: 0; display: flex; overflow: hidden; }
+   chat scrolls beneath it. The wrapper spans every row of #main-col, so the
+   conversation carries on DOWN behind the composer instead of stopping dead
+   at the band's top edge — the band floats back over it (see #status-panel /
+   #held-bar / #input-bar) and the scroller reserves its height below. */
+#chat-wrap { position: relative; min-height: 0; display: flex; overflow: hidden;
+    grid-column: 1; grid-row: 1 / -1; }
 #chat-log { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden;
     padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem;
-    /* Own the top inset: full bar height (M3E small app-bar = 64px) plus the
-       10px wave band plus air, so the first message never tucks under the
-       bar. !important beats the component's own inline padding-top. */
-    padding-top: calc(var(--safe-top) + 4rem + 10px + 0.5rem) !important; }
+    /* Own the top inset: the bar's measured height plus the 10px wave band
+       plus air, so the first message never tucks under the bar. !important
+       beats the component's own inline padding-top. */
+    padding-top: calc(var(--safe-top) + var(--_topbar-h) + 10px + 0.5rem) !important;
+    /* Rest position: clear of the band AND clear of the dissolve, so the last
+       bubble lands fully opaque instead of permanently ghosted. */
+    padding-bottom: calc(var(--_composer-h) + var(--_fade-h) + 0.75rem);
+    /* Fade, not a cover: the content's OWN alpha ramps to zero, so what
+       reaches the eye around the capsule is the plain surface the bubbles
+       already sit on — no second painted layer, no opaque scrim, and nothing
+       theme-dependent (a mask reads alpha, so light and dark get the same
+       ramp for free). The ramp leads in --_fade-h above the band and dies at
+       the screen edge: the capsule is opaque and covers most of the band, so
+       a ramp that started at the band's top edge would only ever fade behind
+       paint. Masking the scroller rather than the wrapper keeps the app bar
+       and the scroll fab out of it. */
+    --_chat-fade: linear-gradient(to bottom, #000 0,
+        #000 calc(100% - var(--_composer-h) - var(--_fade-h)),
+        transparent 100%);
+    -webkit-mask-image: var(--_chat-fade);
+    mask-image: var(--_chat-fade); }
 /* The bar paints neutral (matching the #app-bar row); it also must clear
    the notch. m3e tokens are full color values — reference --md-sys-color-*
    directly, never rgb()-wrapped, and never self-referentially (a var
@@ -1064,16 +1176,29 @@ m3e-shape.avatar:not(:defined) .avatar-fill { border-radius: 50%; }
     display: flex; flex-direction: column; gap: 0.5rem;
     align-items: stretch;
     padding: 0.75rem var(--col-pad) calc(var(--safe-bottom) + 1rem);
-    background: var(--md-sys-color-surface-container);
+    /* Row 4 of #main-col, floated OVER the chat wrapper that now spans every
+       row (the wrapper is positioned, so z-index is what decides it). Both
+       axes must be explicit: with only a row, auto column placement reads the
+       wrapper's span as an occupied cell and parks this row in an implicit
+       auto-sized column instead — the chat then collapses to nothing. The
+       band's own height is what JS publishes as --_composer-h. */
+    grid-column: 1;
+    grid-row: 4;
+    position: relative;
+    z-index: 40;
+    /* No plate. The footer used to paint surface-container as a band behind the
+       old text field, but the composer is now a floating capsule that carries
+       its OWN opaque surface (#composer-pill), so the band only read as a tray
+       it was sitting in. The drag-over state still paints, explicitly. */
+    background: none;
     width: 100%;
     box-sizing: border-box;
 }
-/* The row that used to BE #input-bar: clip + field + autosize + send. */
-#composer-row {
-    display: flex; gap: 0.5rem; align-items: flex-end;
-    width: 100%;
-}
-m3e-icon-button#attach-btn:disabled {
+/* The flat action buttons have no container to dim, so their disabled state is
+   carried by the icon alone — the same 0.38 the previous tonal paperclip used. */
+m3e-icon-button#gallery-btn:disabled,
+m3e-icon-button#add-btn:disabled,
+m3e-icon-button#model-btn:disabled {
     opacity: 0.38;
 }
 /* Drag-and-drop affordance: the whole footer lifts to primary-container while
@@ -1083,8 +1208,12 @@ m3e-icon-button#attach-btn:disabled {
     outline: 2px dashed var(--md-sys-color-primary);
     outline-offset: -6px;
 }
+/* The drop hint has to be translated, and ::after content cannot call t().
+   attr() reads an attribute of the HOST, so the text is carried on
+   #input-bar itself and re-stamped by the locale sweep (data-i18n-drag), with
+   the fallback below covering the moment before the first sweep runs. */
 #input-bar.dragging::after {
-    content: '松开以添加附件';
+    content: attr(data-drag-text);
     position: absolute;
     inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -1264,6 +1393,34 @@ m3e-icon-button#attach-btn:disabled {
        component's measurements, which is what makes it grow line by line. */
     min-height: 1lh !important;
 }
+/* An EMPTY field is one line tall, whatever the hint says. The autosize clone
+   measures the placeholder too (it stands in for the value while the field is
+   empty), so on a phone — where the composer is only 114px wide because the
+   action group and the trailing disc take the rest — 'type a message…
+   (/ 查看命令)' wrapped onto three lines and the empty bar stood 120px high
+   instead of a 72px capsule. The reference pins this with maxLines = 1 on its
+   placeholder text; :placeholder-shown is the same contract, and it stops
+   matching the moment there is a value, so real text still grows to six lines.
+   !important for the same reason as above: the height is an inline style. */
+#input:placeholder-shown {
+    height: 1lh !important;
+}
+/* …but that clamp only covers the EMPTY state, and the component's own number is
+   stale in a way the clamp cannot hide: its clone measures the placeholder at
+   whatever width the field happens to have at that moment, so on a phone the
+   hint wraps to three lines at the pre-compact 114px and writes height:72px —
+   which then survives into a one-word draft, since the component only ever
+   grows from there. The bar stood 120px tall for a single CJK character. Where
+   the platform can size a control to its content, let it: the value drives the
+   height, the hint never does, and the autosize component is left in charge of
+   nothing. min-height and the max-rows cap stay ours. */
+@supports (field-sizing: content) {
+    #input {
+        field-sizing: content;
+        height: auto !important;
+        max-height: calc(6 * 1lh);
+    }
+}
 /* The flex child of the bar is the m3e-form-field WRAPPER, not the inner
    #input textarea. The wrapper must grow to fill the row; otherwise it keeps
    its intrinsic width and leaves a gap beside the send button. (#input's own
@@ -1280,14 +1437,39 @@ m3e-icon-button#attach-btn:disabled {
    not a token and older builds of the component drop the attribute's effect.
    Density is left at default on purpose: density:-3 had shrunk the VISIBLE
    field to 44px, which looked too short. Scoped to this host only. */
-#composer-row > m3e-form-field {
+#composer-pill > m3e-form-field {
     flex: 1 1 auto;
     min-width: 0;
     --md-sys-typescale-body-small-line-height: 0px;
+    /* One painted surface only: the pill behind already IS the inner capsule,
+       so the field's own container is transparent — otherwise the field's
+       radius (the library's extraLarge) and the pill's derived 28 would be two
+       different arcs, and a second layer would sit over the first. */
+    --m3e-form-field-container-color: transparent;
+    /* No underline, in any state. The filled variant draws it as .base::before's
+       bottom border — 1px from --m3e-form-field-outline-color at rest, 3px from
+       --m3e-form-field-focused-outline-color once the field has focus or is
+       pressed. A floating capsule has nothing to underline (the reference sets
+       its indicator colours to transparent), so both are zeroed. */
+    --m3e-form-field-outline-color: transparent;
+    --m3e-form-field-focused-outline-color: transparent;
+    /* …and in the states the library assigns NOTHING (blocked/disabled field)
+       the border colour falls back to currentColor, i.e. the 38%-onSurface grey.
+       The internal property is only ever set ON .base by the rules above, so a
+       value declared here is inherited in every other state and covers them all. */
+    --_form-field-outline-color: transparent;
+    /* No grey press/hover region. Two separate paints: the hover wash (.base::after,
+       onSurface at 8% — drawn as a SQUARE, since that layer carries no radius, so
+       it would also break the capsule's arcs) and the disabled container block
+       (onSurface at 4% on .base::before, visible whenever a prompt is pending or
+       the socket is down). Both are read inside a color-mix, so naming them
+       transparent removes the mix itself. */
+    --m3e-form-field-hover-container-color: transparent;
+    --m3e-form-field-disabled-container-color: transparent;
 }
 /* Expressive send button: a filled primary circle — the composer's one
-   loud accent. send<->stop swings 90deg on the spring token; running/armed
-   retarget the primary tokens to the error palette (armed is full error). */
+   loud accent, stacked in the pill's corner. running/armed retarget the
+   primary tokens to the error palette (armed is full error). */
 m3e-icon-button#send-btn.running {
     --md-sys-color-primary: var(--md-sys-color-error-container);
     --md-sys-color-on-primary: var(--md-sys-color-on-error-container);
@@ -1317,6 +1499,11 @@ m3e-icon-button#send-btn.armed {
     display: none;
     align-items: center; gap: 0.5rem;
     padding: 0.5rem var(--col-pad);
+    /* Row 3, floated over the chat alongside the composer (see #input-bar). */
+    grid-column: 1;
+    grid-row: 3;
+    position: relative;
+    z-index: 40;
     background: var(--md-sys-color-tertiary-container);
     color: var(--md-sys-color-on-tertiary-container);
     width: 100%;
@@ -1341,6 +1528,11 @@ m3e-card#status-panel {
     box-sizing: border-box;
     width: 100%;
     padding: 0.6rem var(--col-pad);
+    /* Row 2, the top of the band the chat runs behind (see #input-bar). */
+    grid-column: 1;
+    grid-row: 2;
+    position: relative;
+    z-index: 40;
     border-radius: 0;
     font-size: 0.85rem;
     background: var(--md-sys-color-secondary-container);
@@ -1384,125 +1576,121 @@ m3e-card#status-panel {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-/* Bell + notif dropdown. Radius matches the model menu — the three are
-   sibling floating panels; its own children (list rows) sit flush and are
-   clipped, so no inner radius constrains it. Anchored under its button
-   (bar row: 0.5rem pad + 2.5rem settings button + 0.6rem gap). */
-/* Notification history, settings, and the model list are modal bottom sheets
-   on a phone and anchored dropdowns on a wide screen. The narrow-screen rules
-   (the default) are the sheet's own: it owns the surface, the slide-in and the
-   scrim, so there is no dropdown chrome here — no position, no .open class, no
-   box-shadow. The wide-screen overrides live further down. */
-#notif-panel,
-#settings-panel,
-#model-menu {
-    --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
+/* ── Wide screens: the anchored dropdowns (the app's original form) ──
+   These three are the rules the app used before the bottom sheets existed,
+   kept verbatim: a fixed card under the app-bar button, its own shadow and its
+   own corner. They apply at every width by default; the narrow-screen block
+   below hides them in favour of the sheets.
+   The corner is concentric with the segmented rows the card wraps: the library
+   paints a 16px group corner (--md-sys-shape-corner-large) and the row plate
+   ends --_gap short of the card edge, so the card arc is the two added and both
+   arcs share one centre. --_gap feeds the padding too, so the sum cannot drift
+   if either number changes. 28px sat 4px too round next to those rows. */
+#notif-panel {
+    --_row-r: var(--md-sys-shape-corner-large);
+    --_gap: 0.5rem;
+    position: fixed;
+    top: calc(var(--safe-top) + var(--_topbar-h));
+    right: 3.6rem;
+    width: min(320px, calc(100vw - 4.6rem)); max-height: 60vh;
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: calc(var(--_row-r) + var(--_gap));
+    box-shadow: 0 4px 8px 3px rgba(0,0,0,.3);
+    padding: var(--_gap);
+    display: none;
+    flex-direction: column; gap: 0.4rem;
+    z-index: 60;
+    overflow: hidden;
 }
-#notif-list { overflow-y: auto; }
+#notif-panel.open { display: flex; }
+#settings-panel {
+    --_row-r: var(--md-sys-shape-corner-large);
+    --_gap: 0.5rem;
+    position: fixed;
+    top: calc(var(--safe-top) + var(--_topbar-h));
+    right: 0.5rem;
+    width: min(320px, calc(100vw - 1rem));
+    background: var(--md-sys-color-surface-container-high);
+    border-radius: calc(var(--_row-r) + var(--_gap));
+    box-shadow: 0 4px 8px 3px rgba(0,0,0,.3);
+    padding: var(--_gap);
+    display: none;
+    flex-direction: column; gap: 0.4rem;
+    z-index: 60;
+    overflow: hidden;
+}
+#settings-panel.open { display: flex; }
+#model-menu {
+    --m3e-menu-container-color: var(--md-sys-color-surface-container-high);
+    --m3e-menu-container-elevation: 0 4px 8px 3px rgba(0,0,0,.3);
+    --m3e-menu-container-max-height: 55vh;
+}
+/* The composer's attachment menu is the same anchored surface. It stays a menu
+   at every width — it opens from the input bar, not from the app bar, so it has
+   no bottom-sheet twin. */
+#add-menu {
+    --m3e-menu-container-color: var(--md-sys-color-surface-container-high);
+    --m3e-menu-container-elevation: 0 4px 8px 3px rgba(0,0,0,.3);
+}
+.add-item { display: inline-flex; align-items: center; gap: 0.5rem; }
+.add-item m3e-icon { font-size: 1.1rem; }
 
-/* ── Wide screens: the same sheets behave as anchored dropdowns ──
-   A bottom sheet is fixed to the bottom edge by its own :host rule
-   (top: calc(100vh - height)), so the dropdown form is reached by overriding
-   that placement — the component exposes width tokens but no top-space token
-   that actually moves it. The handle is dropped here too: a drag affordance
-   means nothing on a panel that is already fully visible, and it is the
-   clearest signal of which mode the user is in. The handle attribute itself
-   is toggled in JS at the same breakpoint (see the matchMedia call), because
-   hiding it with CSS alone would still leave it in the tab order. */
-@media (min-width: 601px) {
+/* ── Narrow screens: the same three as modal bottom sheets ──
+   The dropdown cards are hidden outright (display:none, not just off-screen:
+   they are position:fixed and would otherwise keep a hit area), and the sheets
+   take over. Only the sheet's container colour is set here — the surface,
+   elevation, slide-in, scrim and drag handle are all the component's own, so
+   there is no chrome to restate. */
+@media (max-width: 600px) {
     #notif-panel,
     #settings-panel,
-    #model-menu {
-        --m3e-bottom-sheet-width: auto;
-        --m3e-bottom-sheet-max-width: 320px;
-        /* A dropdown's width is its own, not the content's: 'auto' would let a
-           short model name shrink the list to a stub. */
-        width: 320px;
-        /* The dropdown's own shadow and small corner, matching the old
-           pre-sheet chrome exactly. */
-        --m3e-bottom-sheet-container-shape: var(--md-sys-shape-corner-extra-large);
-        --m3e-bottom-sheet-minimized-container-shape: var(--md-sys-shape-corner-extra-large);
-        /* Anchored under the app bar's right-hand buttons, each on its own
-           corner: bell 3.6rem from the right, gear 0.5rem, model pill flush. */
-        top: calc(var(--safe-top) + 4rem) !important;
-        transform: none !important;
-        transition: opacity 140ms ease !important;
-        box-shadow: 0 4px 8px 3px rgba(0,0,0,.3);
-        max-height: 60vh;
-        overflow: hidden;
+    #model-menu { display: none !important; }
+    #notif-sheet,
+    #settings-sheet,
+    #model-sheet {
+        --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
     }
-    #notif-panel { left: auto !important; right: 3.6rem; }
-    #settings-panel { left: auto !important; right: 0.5rem; }
-    /* The model pill's position is content-dependent (it moves with the model
-       name), so this sheet is placed in JS at open time — see anchorWideSheet. */
 }
 #notif-toggle-row,
-#settings-title,
-.settings-row,
-#thinking-collapse-row {
+#notif-sheet-toggle-row {
     display: flex; justify-content: space-between; align-items: center;
     padding: 0.4rem 0.6rem;
     font-size: 0.9rem;
 }
-.settings-row { gap: 0.5rem; }
 /* Row labels never fold. CJK text may break between any two characters, so a
    bare <span> label's min-content is ONE glyph: in these flex rows the label
-   then lost the shrink race to its control (the accent picker's max-content —
-   6 dots plus the full-width extract button — is wider than the row) and
-   「主题色」 folded onto two lines. nowrap lifts the label's min-content to its
-   whole width, which fits: the picker itself already wraps the extract button
-   onto its own line. Scoped to the labels so no control inherits nowrap. */
+   then lost the shrink race to its control and 「通知」 folded onto two lines.
+   nowrap lifts the label's min-content to its whole width. Scoped to the
+   labels so no control inherits it. */
 #notif-toggle-row > span,
-.settings-row > :first-child,
-#thinking-collapse-row > :first-child { white-space: nowrap; }
-#settings-title { font-weight: 600; }
-#notif-title { font-weight: 600; font-size: 0.9rem; }
+#notif-sheet-toggle-row > span { white-space: nowrap; }
+#settings-title { font-weight: 600; padding: 0.4rem 0.6rem; font-size: 0.9rem; }
+/* The row labels are the items' own light DOM, so this reaches them. CJK text
+   may break between any two characters, and a folded 主题色 reads as a bug. */
+.settings-row > span { white-space: nowrap; }
+#notif-title,
+#notif-sheet-title { font-weight: 600; font-size: 0.9rem; }
 
-/* Theme-color picker: circular seed-color dots, right-aligned so the palette
-   ends flush with the panel's padding like every other row's control. Each
-   dot shows its literal seed — a swatch is the one place a hardcoded color is
-   the content, not the chrome. The selection ring re-reads the live primary
-   token, so it follows whichever theme is currently applied. */
-#accent-list {
-    display: flex; align-items: center; flex-wrap: wrap;
-    justify-content: flex-end;
-    gap: 0.4rem;
-}
-/* The image picker is the palette's last dot, not a separate button beside
-   it: one geometry rule covers both kinds, so the row reads as seven swatches.
-   It carries its own class because the click handler below treats every
-   .accent-dot as a seed and would otherwise reset the accent to the default. */
-.accent-dot,
-.accent-image {
-    flex: none;
-    width: 1.35rem; height: 1.35rem;
-    padding: 0; border: none; border-radius: 50%;
-    cursor: pointer;
-}
-/* It has no colour to show, so it is an outlined dot with the image glyph:
-   the ring says "same family", the glyph says "pick one from a picture". */
-.accent-image {
-    display: inline-flex; align-items: center; justify-content: center;
-    background: none;
-    color: var(--md-sys-color-on-surface-variant);
+/* Theme-color swatch: shows the literal seed it stands for, both on the
+   settings row's button and inside each accent-menu item. A swatch is the one
+   place a hardcoded color is the content, not the chrome, so it keeps the
+   seed's own value; the hairline ring is what makes a pale seed readable on a
+   pale surface. */
+.accent-swatch {
+    display: inline-block; flex: none;
+    width: 0.9rem; height: 0.9rem;
+    border-radius: 50%;
+    vertical-align: -0.12rem;
+    margin-inline-end: 0.35rem;
     box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline) 50%, transparent);
-    transition: box-shadow 150ms, color 150ms;
 }
-.accent-image:hover {
-    color: var(--md-sys-color-on-surface);
-    box-shadow: inset 0 0 0 1px var(--md-sys-color-outline);
-}
-.accent-image m3e-icon { font-size: 0.8rem; }
-.accent-dot {
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--md-sys-color-outline) 50%, transparent);
-    transition: box-shadow 150ms;
-}
-.accent-dot.selected {
-    box-shadow: 0 0 0 2px var(--md-sys-color-surface-container-high),
-                0 0 0 3.5px var(--md-sys-color-primary);
-}
+/* One wrapper per item: the menu item lays its default slot out as a flex row,
+   so swatch and label must travel together to stay side by side. */
+.accent-item { display: inline-flex; align-items: center; gap: 0.4rem; }
+.accent-item m3e-icon { font-size: 1rem; }
 
-m3e-list#notif-list {
+#notif-list,
+#notif-sheet-list {
     overflow-y: auto; flex: 1;
     font-size: 0.85rem;
     padding: 0;
@@ -1517,23 +1705,15 @@ m3e-list#notif-list {
     font-size: 0.85rem;
 }
 
-/* Model picker menu (m3e-menu, anchored to the app-bar pill by the
-   library). Shape, padding, line metrics and sizing are all the
-   component's defaults. Only theme integration (surface color + elevation
-   onto the mdui tokens) and the scroll extent are mapped. */
-#model-menu {
-    --m3e-bottom-sheet-container-color: var(--md-sys-color-surface-container-high);
-}
-#model-list { max-height: 55vh; overflow-y: auto; }
-.model-row {
-    display: flex; align-items: center; gap: 0.5rem; width: 100%;
-    padding: 0.6rem 0.75rem; border: 0; background: none; color: inherit;
-    font: inherit; text-align: left; cursor: pointer;
-    border-radius: var(--md-sys-shape-corner-large);
-}
-.model-row:hover { background: var(--md-sys-color-surface-container-highest); }
+/* Model picker rows. The wide form is an m3e-menu of radio items (its tokens
+   are declared with the other dropdowns above); the phone form is a scrollable
+   segmented action list inside the sheet. */
+#model-sheet-list { max-height: 55vh; overflow-y: auto; }
+/* The sheet's rows are m3e-list-action items in a segmented action list, so
+   their metrics, hover state, shape and focus ring are the component's. Only
+   the current row's emphasis and the tick's colour are ours. */
 .model-row.current .model-row-name { font-weight: 600; }
-.model-row-check { margin-left: auto; color: var(--md-sys-color-primary); }
+.model-row-check { color: var(--md-sys-color-primary); }
 /* Two-line rows inside the plain radios: the item lays its default slot out
    as a flex row, so one block wrapper stacks the name over the provider.
    Font metrics (line-height, sizes, shape) stay the component's defaults. */
@@ -1557,58 +1737,53 @@ m3e-list#notif-list {
     font-size: 0.85rem;
 }
 
-/* Cmd suggestions (above input). Same 28px family as the notif/model panels.
-   Rows are inset 0.5rem and rounded 1.25rem (mdui-list-item's native
-   "rounded" attribute, whose state layer follows the token) — concentric
-   with the panel exactly like the model menu: 28 − 8 = 20. */
+/* Cmd suggestions (above input): a segmented m3e-list, exactly like the notif
+   and settings lists. Row metrics, the plate each row paints, the corner family
+   the segmented variant derives per position (first / middle / last) and the
+   supporting-text line are all the component's own, so nothing is restated
+   here. The list is the scroller — its host is overflow:auto natively — which
+   is why the card neither scrolls nor carries a hand-drawn thumb any more. */
 #cmd-suggestions {
     position: absolute;
     bottom: 100%;
-    /* Right edge stops where the text field stops: composer gap (0.5) plus
-       the send capsule (5.25) — the panel matches the input's width, not the
-       full footer row that also contains the send button. */
     left: var(--col-pad);
-    right: calc(var(--col-pad) + 0.5rem + 5.25rem);
+    right: var(--col-pad);
+    /* The composer is one capsule now (the send button lives inside it), so the
+       panel spans the footer exactly and shares its 28px corner family. */
     margin-bottom: 0.25rem;
     background: var(--md-sys-color-surface-container-high);
     border-radius: var(--md-sys-shape-corner-extra-large);
     box-shadow: 0 2px 6px 2px rgba(0,0,0,.3);
     overflow: hidden;
     display: none;
-    max-height: 14rem;
-    overflow-y: auto;
     padding: 0.5rem;
     box-sizing: border-box;
 }
-#cmd-suggestions m3e-list { padding: 0; }
-#cmd-suggestions m3e-list-item {
-    cursor: pointer;
-    font-size: 0.9rem;
-    /* m3e-list-item observes no attributes, so mdui's rounded variant did nothing:
-       the row painted square and full-bleed inside this 28px panel. The
-       component's own container tokens are the supported lever — shape
-       1.25rem = the panel's 28 minus the 8px padding, so the row plate is
-       concentric with the panel corner — plus a container colour for the
-       keyboard-selected row. */
-    --m3e-list-item-container-shape: 1.25rem;
-    --m3e-list-item-container-color: transparent;
+/* The cap lives on the scroller. 55vh is the model sheet's own ceiling, and
+   26rem is what shows every command on a desktop window without scrolling.
+   App-wide the native bar is hidden and a hand-drawn thumb is overlaid instead;
+   this scroller gets the platform's own behaviour back, which is one standard
+   property — once scrollbar-width is not auto the browser ignores the
+   ::-webkit-scrollbar rules entirely. */
+#cmd-suggestions m3e-list {
+    max-height: min(26rem, 55vh);
+    scrollbar-width: thin;
 }
+#cmd-suggestions m3e-list-item { cursor: pointer; }
 #cmd-suggestions m3e-list-item.active {
     --m3e-list-item-container-color: var(--md-sys-color-surface-container-highest);
 }
-/* Slotted row text (attributes are ignored): bold name + muted detail, the
-   same two-line recipe the model menu shows. */
+/* Only the command name is emphasised; its description rides the component's
+   supporting-text line at the library's own size and colour. */
 #cmd-suggestions .cmd-name { font-weight: 600; }
-#cmd-suggestions .cmd-desc {
-    font-size: 0.78rem;
-    color: var(--md-sys-color-on-surface-variant);
-}
-#cmd-suggestions m3e-list-item + m3e-list-item { margin-top: 0.1rem; }
 
 /* Scroll-to-bottom (mdui-fab) */
 m3e-fab#scroll-bottom {
     position: absolute;
-    bottom: 1rem; right: var(--col-pad);
+    /* The wrapper reaches the viewport's bottom edge now, so the fab seats
+       itself above the whole band instead of 1rem from the screen edge —
+       which also keeps it out of the chat's dissolve. */
+    bottom: calc(var(--_composer-h) + 1rem); right: var(--col-pad);
     /* Must out-rank the code-head pill (z-index: 1) — a code block at the
        bottom of the viewport otherwise floats its copy button over this. */
     z-index: 5;
@@ -1776,12 +1951,12 @@ export function mduiHtml(wsUrl: string): string {
     <m3e-drawer-container id="drawer" start-mode="over">
       <!-- Session sidebar: populated by the sessions frame, refreshed every
            time the drawer opens. -->
-      <nav slot="start" id="session-drawer" aria-label="会话列表">
+      <nav slot="start" id="session-drawer" data-i18n-aria="sessions" aria-label="会话列表">
         <div id="session-drawer-head">
-          <span id="session-drawer-title">会话</span>
-          <m3e-icon-button id="session-drawer-close" aria-label="关闭"><m3e-icon name="close"></m3e-icon></m3e-icon-button>
+          <span id="session-drawer-title" data-i18n="sessions">会话</span>
+          <m3e-icon-button id="session-drawer-close" data-i18n-aria="close" aria-label="关闭"><m3e-icon name="close"></m3e-icon></m3e-icon-button>
         </div>
-        <m3e-nav-menu id="session-list" aria-label="会话"></m3e-nav-menu>
+        <m3e-selection-list id="session-list" variant="segmented" data-i18n-aria="sessions" aria-label="会话" hide-selection-indicator></m3e-selection-list>
       </nav>
 
       <div id="main-col">
@@ -1798,22 +1973,31 @@ export function mduiHtml(wsUrl: string): string {
            silently drops unassigned light children, so the bar came up empty
            until the content was re-homed into slots below. -->
         <div id="app-bar" slot="leading">
-          <m3e-icon-button id="menu-btn" aria-label="会话列表"><m3e-icon name="menu"></m3e-icon></m3e-icon-button>
+          <!-- Tonal: the menu opener gets a substrate plate like the trailing
+               toggle group, so the two bar ends read as the same button family
+               rather than a bare glyph floating on the bar. -->
+          <m3e-icon-button id="menu-btn" variant="tonal" data-i18n-aria="sessions" aria-label="会话列表"><m3e-icon name="menu"></m3e-icon></m3e-icon-button>
           <span id="status-dot"></span>
         </div>
-        <div id="app-title" slot="title">
-          <div id="model-picker">
-            <button type="button" id="model-trigger" aria-label="切换模型">
-              <span id="status-model">π-task remote</span>
-              <span id="model-caret" aria-hidden="true"></span>
-            </button>
-          </div>
+        <!-- Two-line identity readout, both ends informational: which
+             conversation this is, and which model serves it. The model used to
+             be a picker pill here; the composer's model button is the only
+             entry point now, so nothing in the bar is clickable but the icons. -->
+        <div id="app-title" slot="title"><span id="chat-title">π-task</span></div>
+        <div id="app-subtitle" slot="subtitle">
+          <span id="status-model" data-i18n="noModel">未选择模型</span>
           <span id="status-ctx"></span>
         </div>
         <div id="app-actions" slot="trailing">
-          <span id="status-chip">disconnected</span>
-          <m3e-icon-button id="notif-btn" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
-          <m3e-icon-button id="settings-btn" aria-label="设置"><m3e-icon name="settings"></m3e-icon></m3e-icon-button>
+          <!-- Grouped as a toggle pair WITHOUT multi: it is a radiogroup, so
+               selecting one deselects the other — opening a panel closes the
+               other (setNotifOpen/setSettingsOpen also enforce this in code, so
+               the "pressed" fill is exactly the open indicator and never two at
+               once). -->
+          <m3e-button-group>
+            <m3e-icon-button id="notif-btn" variant="tonal" toggle data-i18n-aria="notifications" aria-label="通知"><m3e-icon name="notifications"></m3e-icon></m3e-icon-button>
+            <m3e-icon-button id="settings-btn" variant="tonal" toggle data-i18n-aria="settings" aria-label="设置"><m3e-icon name="settings"></m3e-icon></m3e-icon-button>
+          </m3e-button-group>
         </div>
       </m3e-app-bar>
       <!-- Context-usage wave: a second row under the bar. M3E's small app-bar
@@ -1824,10 +2008,10 @@ export function mduiHtml(wsUrl: string): string {
         <m3e-linear-progress-indicator id="ctx-bar-flat" value="0" max="100"
           aria-hidden="true"></m3e-linear-progress-indicator>
         <m3e-linear-progress-indicator id="ctx-bar" variant="wavy" value="0" max="100"
-          aria-label="上下文用量"></m3e-linear-progress-indicator>
+          data-i18n-aria="contextUsage" aria-label="上下文用量"></m3e-linear-progress-indicator>
       </div>
       <div id="chat-log"></div>
-      <m3e-fab id="scroll-bottom" variant="tertiary-container" size="small" lowered aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
+      <m3e-fab id="scroll-bottom" variant="tertiary-container" size="small" lowered data-i18n-aria="jumpToBottom" data-i18n-title="jumpToBottom" aria-label="跳到底部" title="跳到底部"><m3e-icon name="arrow_downward"></m3e-icon></m3e-fab>
     </main>
 
     <!-- Status panel: shows structured task progress (phase / step / elapsed) -->
@@ -1838,28 +2022,68 @@ export function mduiHtml(wsUrl: string): string {
       <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M12 20a8 8 0 1 0-8-8 8 8 0 0 0 8 8zm0-18a10 10 0 1 1-10 10A10 10 0 0 1 12 2zm.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"/></svg>
       <span id="held-label">waiting:</span>
       <span id="held-text"></span>
-      <m3e-icon-button id="held-clear" title="清除"><m3e-icon name="close"></m3e-icon></m3e-icon-button>
+      <m3e-icon-button id="held-clear" data-i18n-title="clear" title="清除"><m3e-icon name="close"></m3e-icon></m3e-icon-button>
     </div>
 
-    <footer id="input-bar" style="position:relative;">
+    <footer id="input-bar" data-i18n-drag="dropToAttach" data-drag-text="松开以添加附件">
       <div id="cmd-suggestions"></div>
       <!-- Attachments waiting to be sent. Sits directly above the composer and
            shares its width, so a thumbnail row reads as part of the field. -->
       <div id="attach-tray" aria-live="polite"></div>
-      <div id="composer-row">
-        <!-- Paperclip: opens the picker. Doubles as the drop-target hint when
-             drag-and-drop is in progress (see #input-bar.dragging). -->
-        <m3e-icon-button id="attach-btn" variant="tonal" aria-label="添加附件" title="添加图片或文件" disabled><m3e-icon name="attach_file"></m3e-icon></m3e-icon-button>
-        <input type="file" id="attach-input" multiple hidden>
-        <!-- hide-subscript="always": this field has no supporting text, and the
-             reserved row for it is what made the host taller than the visible
-             box (and the buttons beside it look mismatched). -->
-        <m3e-form-field variant="filled" hide-subscript="always">
-          <textarea id="input" placeholder="输入消息（/ 查看命令）…" rows="1" disabled></textarea>
-        </m3e-form-field>
-        <m3e-textarea-autosize for="input" min-rows="1" max-rows="6"></m3e-textarea-autosize>
-        <m3e-icon-button id="send-btn" variant="filled" disabled aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
-      </div>
+      <m3e-toolbar id="composer-bar" variant="vibrant" shape="rounded">
+        <!-- Left action group: the reference's three (attach menu, gallery,
+             model). Each is wrapped in a slot div because m3e-menu-trigger
+             anchors its menu to the trigger's PARENT element, so that parent has
+             to hug the button. align-self puts them on the field's bottom
+             baseline instead of its midline (see the CSS). -->
+        <div id="composer-actions">
+          <div class="composer-slot">
+            <m3e-menu-trigger for="add-menu" data-i18n-aria="addAttachment" aria-label="添加附件">
+              <m3e-icon-button id="add-btn" size="small" variant="standard" data-i18n-aria="addAttachment" data-i18n-title="addAttachment" aria-label="添加附件" title="添加附件" disabled><m3e-icon name="add"></m3e-icon></m3e-icon-button>
+            </m3e-menu-trigger>
+          </div>
+          <div class="composer-slot">
+            <m3e-icon-button id="gallery-btn" size="small" variant="standard" data-i18n-aria="pickImage" data-i18n-title="pickImage" aria-label="选择图片" title="选择图片" disabled><m3e-icon name="image"></m3e-icon></m3e-icon-button>
+          </div>
+          <div class="composer-slot" id="model-slot">
+            <m3e-menu-trigger for="model-menu" data-i18n-aria="switchModel" aria-label="切换模型">
+              <m3e-icon-button id="model-btn" size="small" variant="standard" data-i18n-aria="switchModel" data-i18n-title="switchModel" aria-label="切换模型" title="切换模型" disabled><m3e-icon name="auto_awesome"></m3e-icon></m3e-icon-button>
+            </m3e-menu-trigger>
+          </div>
+        </div>
+        <!-- The inner capsule. Its own background is painted opaque at all
+             times, not only behind the field: the trailing button and the
+             loading indicator sit ON this box, and a transparent gap between
+             them and the form-field would let the vibrant toolbar show
+             through. -->
+        <div id="composer-pill">
+          <m3e-loading-indicator id="composer-loading" variant="contained" aria-hidden="true"></m3e-loading-indicator>
+          <!-- hide-subscript="always": this field has no supporting text, and the
+               reserved row for it is what made the host taller than the visible
+               box (and the buttons beside it look mismatched). -->
+          <m3e-form-field variant="filled" hide-subscript="always">
+            <textarea id="input" data-i18n-placeholder="inputPlaceholder" placeholder="输入消息（/ 查看命令）…" rows="1" disabled></textarea>
+          </m3e-form-field>
+          <m3e-textarea-autosize for="input" min-rows="1" max-rows="6"></m3e-textarea-autosize>
+          <m3e-icon-button id="send-btn" size="small" variant="filled" disabled data-i18n-aria="send" aria-label="发送"><m3e-icon name="send" filled></m3e-icon></m3e-icon-button>
+          <!-- The stop gesture is two taps (arm, then confirm), which is not
+               discoverable from a square glyph alone. A tooltip on the button
+               says so: hover/focus gets it, and the arm tap pops it
+               immediately (see armStop) so the "now what" is answered at the
+               exact moment it becomes a question. for= resolves by id inside
+               the root, so this can sit anywhere — here, next to the button
+               it describes. -->
+          <m3e-tooltip id="stop-tip" for="send-btn" position="above" show-delay="0" hide-delay="200" touch-gestures="off" data-i18n="stopArmHint">点击两次以停止</m3e-tooltip>
+        </div>
+      </m3e-toolbar>
+      <input type="file" id="attach-input" multiple hidden>
+      <!-- Lives beside the toolbar, not inside it: a menu is fixed-position
+           chrome and would be clipped by the toolbar's own surface. -->
+      <m3e-menu id="add-menu" data-i18n-aria="addAttachment" aria-label="添加附件">
+        <m3e-menu-item data-add="image"><span class="add-item"><m3e-icon name="image"></m3e-icon><span data-i18n="image">图片</span></span></m3e-menu-item>
+        <m3e-menu-item data-add="file"><span class="add-item"><m3e-icon name="attach_file"></m3e-icon><span data-i18n="file">文件</span></span></m3e-menu-item>
+        <m3e-menu-item data-add="clear"><span class="add-item"><m3e-icon name="delete"></m3e-icon><span data-i18n="clearAll">清除全部</span></span></m3e-menu-item>
+      </m3e-menu>
     </footer>
       </div><!-- /main-col -->
     </m3e-drawer-container>
@@ -1867,79 +2091,125 @@ export function mduiHtml(wsUrl: string): string {
 
   <!-- Notifications dropdown: the toggle plus the history list, nothing
        else — appearance and behaviour settings live in #settings-panel. -->
-  <m3e-bottom-sheet id="notif-panel" modal handle handle-label="通知面板拖拽手柄">
+  <div id="notif-panel" aria-hidden="true">
     <div id="notif-toggle-row">
-      <span id="notif-title">通知</span>
-      <m3e-switch id="notif-toggle"></m3e-switch>
+      <span id="notif-title" data-i18n="notifications">通知</span>
+      <m3e-switch id="notif-toggle" icons="both"></m3e-switch>
     </div>
-    <m3e-list id="notif-list"></m3e-list>
+    <m3e-list id="notif-list" variant="segmented"></m3e-list>
+  </div>
+  <m3e-bottom-sheet id="notif-sheet" modal handle data-i18n-handle-label="dragHandleNotifications" handle-label="通知面板拖拽手柄">
+    <div id="notif-sheet-toggle-row">
+      <span id="notif-sheet-title" data-i18n="notifications">通知</span>
+      <m3e-switch id="notif-sheet-toggle" icons="both"></m3e-switch>
+    </div>
+    <m3e-list id="notif-sheet-list" variant="segmented"></m3e-list>
   </m3e-bottom-sheet>
 
-  <!-- Settings dropdown: appearance and behaviour only. The theme is a
-       three-way connected button group (light / dark / auto) instead of the
-       old cycling button — one glance shows the current mode. -->
-  <m3e-bottom-sheet id="settings-panel" modal handle handle-label="设置面板拖拽手柄">
-    <div id="settings-title">设置</div>
-    <div class="settings-row">
-      <span>深浅色模式</span>
-      <m3e-button-group id="theme-seg" variant="connected" size="small">
-        <m3e-button variant="tonal" toggle data-value="light">浅色</m3e-button>
-        <m3e-button variant="tonal" toggle data-value="dark">深色</m3e-button>
-        <m3e-button variant="tonal" toggle data-value="auto" selected>自动</m3e-button>
-      </m3e-button-group>
-    </div>
-    <div class="settings-row">
-      <span>主题色</span>
-      <div id="accent-list" role="radiogroup" aria-label="主题色">
-        <button type="button" class="accent-dot" data-accent="" style="background:#6750A4" title="默认" aria-label="默认"></button>
-        <button type="button" class="accent-dot" data-accent="#1E88E5" style="background:#1E88E5" title="蓝色" aria-label="蓝色"></button>
-        <button type="button" class="accent-dot" data-accent="#00897B" style="background:#00897B" title="青色" aria-label="青色"></button>
-        <button type="button" class="accent-dot" data-accent="#43A047" style="background:#43A047" title="绿色" aria-label="绿色"></button>
-        <button type="button" class="accent-dot" data-accent="#EF6C00" style="background:#EF6C00" title="橙色" aria-label="橙色"></button>
-        <button type="button" class="accent-dot" data-accent="#D32F2F" style="background:#D32F2F" title="红色" aria-label="红色"></button>
-        <button type="button" class="accent-dot" data-accent="#7B1FA2" style="background:#7B1FA2" title="紫色" aria-label="紫色"></button>
-        <button type="button" id="accent-extract" class="accent-image" title="从图片提取主题色" aria-label="从图片提取主题色"><m3e-icon name="image"></m3e-icon></button>
-        <input type="file" id="accent-wallpaper" accept="image/*" hidden>
-      </div>
-    </div>
-    <div id="thinking-collapse-row">
-      <span>Thinking 自动收起</span>
-      <m3e-switch id="thinking-collapse"></m3e-switch>
-    </div>
-  </m3e-bottom-sheet>
+  <!-- Settings: appearance and behaviour only, as a segmented list — one item
+       per choice, with the library's own metrics instead of hand-rolled flex
+       rows. The two palette choices are menus of radio items: the row shows the
+       value in force, the menu shows the whole set and draws the tick.
+       The panel has TWO hosts, one per form factor: a bottom sheet on a phone
+       and an anchored dropdown on a wide screen. The CONTENT lives once, in a
+       template, and is cloned into whichever host is active (see
+       moveSettingsContent) — the other host is emptied, or the duplicate ids
+       would resolve to a stale copy.
+       The menus and the wallpaper input live OUTSIDE that template, at the top
+       level: a menu is position:fixed chrome, and inside a sheet it would be
+       clipped by the sheet's own surface. -->
+  <template id="settings-content">
+    <div id="settings-title" data-i18n="settings">设置</div>
+    <m3e-list id="settings-list" variant="segmented">
+      <m3e-list-item class="settings-row">
+        <span data-i18n="darkLightMode">深浅色模式</span>
+        <m3e-button slot="trailing" variant="text" size="small">
+          <m3e-menu-trigger for="theme-menu"><span id="theme-value" data-i18n="themeAuto">自动</span></m3e-menu-trigger>
+        </m3e-button>
+      </m3e-list-item>
+      <m3e-list-item class="settings-row">
+        <span data-i18n="themeColor">主题色</span>
+        <m3e-button slot="trailing" variant="text" size="small">
+          <m3e-menu-trigger for="accent-menu"><span class="accent-swatch" id="accent-value-swatch"></span><span id="accent-value" data-i18n="accentDefault">默认</span></m3e-menu-trigger>
+        </m3e-button>
+      </m3e-list-item>
+      <!-- Language: a menu of radio items, exactly like the two palette rows
+           above, so the settings list stays one component with one set of
+           metrics. Filled from LOCALES at boot (see renderLocaleMenu). -->
+      <m3e-list-item class="settings-row">
+        <span data-i18n="language">语言</span>
+        <m3e-button slot="trailing" variant="text" size="small">
+          <m3e-menu-trigger for="locale-menu"><span id="locale-value" data-i18n="appTitle">简体中文</span></m3e-menu-trigger>
+        </m3e-button>
+      </m3e-list-item>
+      <m3e-list-item class="settings-row">
+        <span data-i18n="autoCollapseThinking">Thinking 自动收起</span>
+        <m3e-switch slot="trailing" id="thinking-collapse" icons="both"></m3e-switch>
+      </m3e-list-item>
+    </m3e-list>
+  </template>
+  <m3e-menu id="theme-menu" data-i18n-aria="darkLightMode" aria-label="深浅色模式">
+    <m3e-menu-item-radio data-value="light" data-i18n="themeLight">浅色</m3e-menu-item-radio>
+    <m3e-menu-item-radio data-value="dark" data-i18n="themeDark">深色</m3e-menu-item-radio>
+    <m3e-menu-item-radio data-value="auto" data-i18n="themeAuto">自动</m3e-menu-item-radio>
+  </m3e-menu>
+  <!-- Language menu. Its items are built from LOCALES, because the list of
+       supported languages is data, not markup: adding a locale should not
+       mean editing four places. -->
+  <m3e-menu id="locale-menu" data-i18n-aria="language" aria-label="语言"></m3e-menu>
+  <!-- One radio per seed colour, each showing its own swatch; the last row is
+       an action, not a choice, so it is a plain menu item. -->
+  <m3e-menu id="accent-menu" data-i18n-aria="themeColor" aria-label="主题色">
+    <m3e-menu-item-radio data-accent="" data-i18n-name="accentDefault" data-name="默认"><span class="accent-item"><span class="accent-swatch" style="background:#6750A4"></span><span data-i18n="accentDefault">默认</span></span></m3e-menu-item-radio>
+    <m3e-menu-item-radio data-accent="#1E88E5" data-i18n-name="accentBlue" data-name="蓝色"><span class="accent-item"><span class="accent-swatch" style="background:#1E88E5"></span><span data-i18n="accentBlue">蓝色</span></span></m3e-menu-item-radio>
+    <m3e-menu-item-radio data-accent="#00897B" data-i18n-name="accentTeal" data-name="青色"><span class="accent-item"><span class="accent-swatch" style="background:#00897B"></span><span data-i18n="accentTeal">青色</span></span></m3e-menu-item-radio>
+    <m3e-menu-item-radio data-accent="#43A047" data-i18n-name="accentGreen" data-name="绿色"><span class="accent-item"><span class="accent-swatch" style="background:#43A047"></span><span data-i18n="accentGreen">绿色</span></span></m3e-menu-item-radio>
+    <m3e-menu-item-radio data-accent="#EF6C00" data-i18n-name="accentOrange" data-name="橙色"><span class="accent-item"><span class="accent-swatch" style="background:#EF6C00"></span><span data-i18n="accentOrange">橙色</span></span></m3e-menu-item-radio>
+    <m3e-menu-item-radio data-accent="#D32F2F" data-i18n-name="accentRed" data-name="红色"><span class="accent-item"><span class="accent-swatch" style="background:#D32F2F"></span><span data-i18n="accentRed">红色</span></span></m3e-menu-item-radio>
+    <m3e-menu-item-radio data-accent="#7B1FA2" data-i18n-name="accentPurple" data-name="紫色"><span class="accent-item"><span class="accent-swatch" style="background:#7B1FA2"></span><span data-i18n="accentPurple">紫色</span></span></m3e-menu-item-radio>
+    <m3e-menu-item id="accent-extract"><span class="accent-item"><m3e-icon name="image"></m3e-icon><span data-i18n="extractFromImage">从图片提取</span></span></m3e-menu-item>
+  </m3e-menu>
+  <input type="file" id="accent-wallpaper" accept="image/*" hidden>
+  <!-- Wide-screen dropdown: the recipe the app used before the sheets, kept
+       verbatim so a desktop keeps the anchored card, its shadow and its 28px
+       corner. -->
+  <div id="settings-panel" aria-hidden="true"></div>
+  <!-- Phone: the same content inside a modal bottom sheet. -->
+  <m3e-bottom-sheet id="settings-sheet" modal handle data-i18n-handle-label="dragHandleSettings" handle-label="设置面板拖拽手柄"></m3e-bottom-sheet>
 
-  <!-- Model picker: a modal bottom sheet opened by the app-bar pill. Fed by
-       the models frame (authed catalogue + current spec) rendered as rows;
-       choosing one sends set_model, and the fresh frame that answers
-       re-renders the tick — no optimistic check, so a rejected switch can't
-       leave the list lying. -->
-  <m3e-bottom-sheet id="model-menu" modal handle handle-label="模型列表拖拽手柄" aria-label="切换模型">
-    <div id="model-list"></div>
+  <!-- Model picker: the two forms of one panel, both opened from the composer's
+       model button. Fed by the models frame (authed catalogue + current spec)
+       rendered as rows; choosing one sends set_model, and the fresh frame that
+       answers re-renders the tick — no optimistic check, so a rejected switch
+       can't leave the list lying. -->
+  <m3e-menu id="model-menu" data-i18n-aria="switchModel" aria-label="切换模型"></m3e-menu>
+  <m3e-bottom-sheet id="model-sheet" modal handle data-i18n-handle-label="dragHandleModel" data-i18n-aria="switchModel" handle-label="模型列表拖拽手柄" aria-label="切换模型">
+    <m3e-action-list id="model-sheet-list" variant="segmented"></m3e-action-list>
   </m3e-bottom-sheet>
 
   <!-- Prompt dialog: shown when pi asks for user input -->
   <m3e-dialog id="prompt-card">
-    <div slot="header">π 需要你的输入</div>
+    <div slot="header" data-i18n="promptTitle">π 需要你的输入</div>
     <div class="q" id="prompt-q"></div>
     <div class="rec-panel" id="prompt-rec">
-      <div class="rec-label">推荐答案</div>
+      <div class="rec-label" data-i18n="recommended">推荐答案</div>
       <div class="rec-text" id="prompt-rec-text"></div>
     </div>
-    <textarea id="prompt-input" placeholder="输入你的回答…" rows="3" style="display:none"></textarea>
+    <textarea id="prompt-input" data-i18n-placeholder="promptPlaceholder" placeholder="输入你的回答…" rows="3" style="display:none"></textarea>
     <m3e-textarea-autosize for="prompt-input" min-rows="3" max-rows="8"></m3e-textarea-autosize>
     <div slot="actions" class="row" id="prompt-buttons"></div>
   </m3e-dialog>
   <m3e-dialog id="session-delete-dialog" alert>
-    <span slot="header">删除会话</span>
+    <span slot="header" data-i18n="deleteSession">删除会话</span>
     <p class="q" id="session-delete-text"></p>
     <div slot="actions" end>
-      <m3e-button id="session-delete-cancel" autofocus>取消</m3e-button>
-      <m3e-button id="session-delete-confirm" variant="filled">删除</m3e-button>
+      <m3e-button id="session-delete-cancel" autofocus data-i18n="cancel">取消</m3e-button>
+      <m3e-button id="session-delete-confirm" variant="filled" data-i18n="delete">删除</m3e-button>
     </div>
   </m3e-dialog>
 
   <!-- Reconnect overlay with live countdown -->
-  <div id="reconnect-overlay"><span id="reconnect-msg">重新连接中…</span></div>
+  <div id="reconnect-overlay"><span id="reconnect-msg" data-i18n="reconnecting">重新连接中…</span></div>
 
   <script type="module">
     ${BUNDLE_IMPORTS}
@@ -1947,6 +2217,7 @@ export function mduiHtml(wsUrl: string): string {
     ${renderModule()}
     ${highlightModule()}
     ${toolsModule()}
+    ${i18nModule()}
     ${stage0Logic(wsUrl)}
   </script>
     </m3e-theme>
@@ -1969,10 +2240,27 @@ function stage0Logic(wsUrl: string): string {
     // guarded because the component only upgrades once its CDN module loads.
     const topBar = document.getElementById('top-bar');
     if (topBar && 'control' in topBar) { try { topBar.control = chatLog; } catch (_) {} }
+    /* The bar is height:auto and now stacks two text lines, so nothing else can
+       assume its 4rem default: publish its measured height and let the wave
+       band, the chat's top inset and the anchored dropdowns clear that. */
+    if (topBar && typeof ResizeObserver !== 'undefined') {
+      const publishBarHeight = () => {
+        const h = topBar.offsetHeight;
+        if (h) document.documentElement.style.setProperty('--_topbar-h', h + 'px');
+      };
+      new ResizeObserver(publishBarHeight).observe(topBar);
+      publishBarHeight();
+    }
     const inputEl      = document.getElementById('input');
     const sendBtn      = document.getElementById('send-btn');
+    const stopTip      = document.getElementById('stop-tip');
     const inputBar     = document.getElementById('input-bar');
-    const attachBtn    = document.getElementById('attach-btn');
+    const composerBar  = document.getElementById('composer-bar');
+    const composerPill = document.getElementById('composer-pill');
+    const addBtn       = document.getElementById('add-btn');
+    const addMenu      = document.getElementById('add-menu');
+    const galleryBtn   = document.getElementById('gallery-btn');
+    const modelBtn     = document.getElementById('model-btn');
     const attachInput  = document.getElementById('attach-input');
     const attachTray   = document.getElementById('attach-tray');
     const ctxBar       = document.getElementById('ctx-bar');
@@ -1980,15 +2268,15 @@ function stage0Logic(wsUrl: string): string {
     const ctxStack     = document.getElementById('ctx-stack');
     const ctxFill      = document.getElementById('ctx-fallback').firstElementChild;
     const statusDot    = document.getElementById('status-dot');
+    const chatTitle    = document.getElementById('chat-title');
     const statusModel  = document.getElementById('status-model');
     const statusCtx    = document.getElementById('status-ctx');
-    const statusChip   = document.getElementById('status-chip');
     const overlay      = document.getElementById('reconnect-overlay');
     const reconnectMsg = document.getElementById('reconnect-msg');
     const notifBtn     = document.getElementById('notif-btn');
     const settingsBtn  = document.getElementById('settings-btn');
     const settingsPanel= document.getElementById('settings-panel');
-    const themeSeg     = document.getElementById('theme-seg');
+    const settingsSheet= document.getElementById('settings-sheet');
     const cmdSuggestions = document.getElementById('cmd-suggestions');
     const scrollBtn    = document.getElementById('scroll-bottom');
     const heldBar      = document.getElementById('held-bar');
@@ -2005,14 +2293,15 @@ function stage0Logic(wsUrl: string): string {
     const sessionDeleteDialog  = document.getElementById('session-delete-dialog');
     const sessionDeleteText    = document.getElementById('session-delete-text');
     const notifPanel   = document.getElementById('notif-panel');
+    const notifSheet   = document.getElementById('notif-sheet');
     const notifList    = document.getElementById('notif-list');
+    const notifSheetList = document.getElementById('notif-sheet-list');
     const notifToggle  = document.getElementById('notif-toggle');
-    const thinkingCollapse = document.getElementById('thinking-collapse');
+    const notifSheetToggle = document.getElementById('notif-sheet-toggle');
     const notifTitle   = document.getElementById('notif-title');
-    const modelPicker  = document.getElementById('model-picker');
     const modelMenu    = document.getElementById('model-menu');
-    const modelList    = document.getElementById('model-list');
-    const modelTrigger = document.getElementById('model-trigger');
+    const modelSheet   = document.getElementById('model-sheet');
+    const modelSheetList = document.getElementById('model-sheet-list');
     /* Detents as a JS property, not the attribute: the component parses the
        attribute's comma string into ONE detent ("fit,") rather than two.
        The ladder is fit → half → full, so a short panel (settings, an empty
@@ -2024,32 +2313,196 @@ function stage0Logic(wsUrl: string): string {
        m3e-bottom-sheet is loaded lazily, so at parse time they are plain
        HTMLElements with no detents property — assigning earlier would be a
        no-op on a native element. */
+    /* ── Two forms, one panel ──
+       Each of the three app-bar panels exists twice: an anchored dropdown (the
+       app's original form, for wide screens) and a modal bottom sheet (for
+       phones). This object is the seam — everything above it just says
+       open/close/render and gets whichever form the current width calls for.
+
+       The two hosts are NOT allowed to be visible at once: the dropdown is
+       position:fixed and would keep a hit area behind the sheet's scrim. */
+    const WIDE = '(min-width: 601px)';
+    const panels = {
+      notif:   {dropdown: notifPanel,   sheet: notifSheet},
+      settings:{dropdown: settingsPanel, sheet: settingsSheet},
+      model:   {dropdown: modelMenu,    sheet: modelSheet}
+    };
+    const isWide = () => window.matchMedia(WIDE).matches;
+    /** The element that should be showing for a panel right now. */
+    const hostOf = name => (isWide() ? panels[name].dropdown : panels[name].sheet);
+    /** The OTHER element — hidden, but still worth closing so it cannot be
+     *  mid-animation when the breakpoint is crossed. */
+    const otherOf = name => (isWide() ? panels[name].sheet : panels[name].dropdown);
+
     customElements.whenDefined('m3e-bottom-sheet').then(() => {
-      for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
-        const el = document.getElementById(id);
+      for (const name of Object.keys(panels)) {
+        const el = panels[name].sheet;
         if (el) el.detents = ['fit', 'half', 'full'];
       }
-      syncSheetMode();
+      applyForm();
       // A rotation, a window resize onto a dock, or a phone held sideways all
-      // cross the breakpoint, so the mode follows it live.
-      window.matchMedia('(min-width: 601px)').addEventListener('change', syncSheetMode);
+      // cross the breakpoint, so the form follows it live.
+      window.matchMedia(WIDE).addEventListener('change', applyForm);
     }).catch(() => {});
 
-    /* Drag handle only on the sheet form. On a wide screen the panel is an
-       anchored dropdown that is fully visible on open, where a drag affordance
-       means nothing — and removing the attribute keeps the handle out of the
-       tab order, which hiding it with CSS alone would not. */
-    function syncSheetMode() {
-      const wide = window.matchMedia('(min-width: 601px)').matches;
-      for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
-        const el = document.getElementById(id);
-        if (el) el.toggleAttribute('handle', !wide);
+    /* Move the shared content into whichever host is active, and close the
+       other one. Called on load and on every breakpoint crossing. */
+    function applyForm() {
+      for (const name of Object.keys(panels)) {
+        const {dropdown, sheet} = panels[name];
+        if (!sheet) continue;
+        // Settings content lives in a template and is remounted into the active
+        // host, so the two forms can never drift apart.
+        if (name === 'settings') moveSettingsContent();
+        if (isWide()) { if (sheet.open) sheet.hide(); }
+        else { dropdown.classList.remove('open'); }
       }
+      // The model list is rendered by JS into whichever container is live.
+      if (modelCatalog.models.length) renderModelMenu();
+    }
+
+    /* Settings: one <template>, two hosts. The content is cloned into whichever
+       host is active and the other is emptied — a copy left behind would
+       duplicate every id in it, and getElementById resolves to the detached
+       one. The labels show live theme/accent state, so they are re-stamped on
+       each fresh mount (syncSettingsLabels). */
+    let settingsMountedIn = null;
+    function moveSettingsContent() {
+      const tpl = document.getElementById('settings-content');
+      if (!tpl) return;
+      const target = isWide() ? settingsPanel : settingsSheet;
+      // Crossing the breakpoint within the same form (a resize that never
+      // changes the width class) must not rebuild the controls mid-gesture.
+      if (settingsMountedIn === target && target.firstElementChild) return;
+      const other = target === settingsPanel ? settingsSheet : settingsPanel;
+      if (other) other.innerHTML = '';
+      target.innerHTML = '';
+      target.append(tpl.content.cloneNode(true));
+      settingsMountedIn = target;
+      /* The clone is BRAND NEW markup every time: it carries the template's
+         Chinese and has never been through the locale sweep. Re-stamp it here
+         — this runs on boot, on every breakpoint crossing, and on every
+         settings remount, which is exactly when fresh nodes appear. */
+      paintStaticI18n(target);
+      syncSettingsLabels();
     }
     const drawer       = document.getElementById('drawer');
     const menuBtn      = document.getElementById('menu-btn');
     const drawerClose  = document.getElementById('session-drawer-close');
     const sessionList  = document.getElementById('session-list');
+    const localeMenu   = document.getElementById('locale-menu');
+
+    // ───────────── Locale ─────────────
+    /* Static markup is authored in Chinese on purpose — it is the default
+       locale, so the first paint is never a flash of untranslated keys or of
+       empty boxes waiting on a table. Switching language therefore has to go
+       back and re-stamp that markup, which is what data-i18n* marks: one
+       attribute per target property, so the sweep is one query and not a
+       hand-written list of forty textContent assignments that would silently
+       rot every time a row was added.
+       Everything dynamic (toasts, placeholders, session rows) just calls
+       t() again the next time it paints, so it needs no marking. */
+    const I18N_ATTRS = [
+      ['data-i18n', 'textContent'],
+      ['data-i18n-title', 'title'],
+      ['data-i18n-aria', 'ariaLabel'],
+      ['data-i18n-placeholder', 'placeholder'],
+      // Both written as ATTRIBUTES, not IDL properties: m3e-bottom-sheet's
+      // handleLabel and ariaLabel may or may not reflect depending on whether
+      // the lazy module has upgraded the element yet, and setAttribute is the
+      // one form that always lands and is always readable back.
+      ['data-i18n-handle-label', 'handle-label'],
+      // Not a DOM property: the drop hint is painted by ::after, which can
+      // only read attr(). See the CSS note on #input-bar.dragging::after.
+      ['data-i18n-drag', 'data-drag-text']
+    ];
+    function paintStaticI18n(root) {
+      for (const [attr, prop] of I18N_ATTRS) {
+        for (const el of (root || document).querySelectorAll('[' + attr + ']')) {
+          const key = el.getAttribute(attr);
+          if (!key) continue;
+          /* aria-label goes through the attribute, not the IDL property:
+             ariaLabel is reflected but several of these hosts are custom
+             elements mid-upgrade, and setAttribute is the one form that
+             always lands. */
+          if (prop === 'ariaLabel' || prop === 'handle-label' || prop === 'data-drag-text')
+            el.setAttribute(prop === 'ariaLabel' ? 'aria-label' : prop, t(key));
+          else el[prop] = t(key);
+        }
+      }
+    }
+    /* Language menu: built from LOCALE_LABELS so the supported set lives in
+       one place (ui-i18n.ts) instead of being mirrored into markup. */
+    function renderLocaleMenu() {
+      if (!localeMenu) return;
+      let html = '';
+      for (const id of Object.keys(LOCALE_LABELS)) {
+        html += '<m3e-menu-item-radio data-locale="' + id + '" data-i18n="' + id + '"></m3e-menu-item-radio>';
+      }
+      localeMenu.innerHTML = html;
+      // Each item shows its own language's name for that language — "English"
+      // stays "English" in every locale, which is what makes the menu
+      // readable to someone who cannot read the current one.
+      for (const it of localeMenu.querySelectorAll('[data-locale]')) {
+        it.textContent = LOCALE_LABELS[it.getAttribute('data-locale')];
+        it.addEventListener('click', () => pickLocale(it.getAttribute('data-locale')));
+      }
+      localeItems = Array.from(localeMenu.querySelectorAll('[data-locale]'));
+    }
+    let localeItems = [];
+    function applyLocaleSelection(id) {
+      for (const it of localeItems) it.toggleAttribute('checked', it.getAttribute('data-locale') === id);
+      const lbl = settingsHost().querySelector('#locale-value');
+      if (lbl) lbl.textContent = LOCALE_LABELS[id] || id;
+    }
+    function pickLocale(id) {
+      if (!id || id === CURRENT_LOCALE) { localeMenu?.hideAll?.(true); return; }
+      applyLocale(id, repaintLocale);
+      localeMenu?.hideAll?.(true);
+      showToast(t('languageSwitched') + (LOCALE_LABELS[id] || id), 'info');
+    }
+    /* Everything that has to be re-stamped when the language changes. Order
+       matters only in that the static sweep comes first: the re-renders below
+       regenerate whole subtrees (menus, session rows, chat titles), and those
+       fresh nodes must be built against the NEW locale. */
+    function repaintLocale() {
+      paintStaticI18n(document);
+      renderLocaleMenu();
+      applyLocaleSelection(CURRENT_LOCALE);
+      applyThemeSelection(localStorage.getItem('pi-task-theme') || 'auto');
+      applyAccent(localStorage.getItem('pi-task-accent') || '', false);
+      if (modelCatalog.models.length) renderModelMenu();
+      renderSessions();
+      syncChatTitle();
+      renderAttachments();
+      if (notifHistory.length) renderNotifList();
+      else if (notifList) notifList.innerHTML = '<div id="notif-empty">' + t('noNotifications') + '</div>';
+      if (notifSheetList) notifSheetList.innerHTML = notifList ? notifList.innerHTML : '';
+      /* Live composer state, all of which is phrased: the placeholder, the
+         button tooltips, the stop-tooltip, the status line's "no model"
+         fallback, and the reconnect countdown. */
+      refreshComposer();
+      setSendBtn(true);
+      setModelName();
+      /* The countdown is re-painted by its own interval (90ms), so it picks
+         the new locale up on the next tick without being forced here. */
+    }
+    /* Boot: restore the stored locale, or infer a sensible default from the
+       browser. navigator.language is only a hint — it is the browser UI's
+       language, not the user's keyboard — so it seeds the FIRST visit only
+       and is never allowed to override a choice already made. */
+    function initialLocale() {
+      let stored = null;
+      try { stored = localStorage.getItem('pi-task-locale'); } catch (e) {}
+      if (stored && LOCALE_TABLES[stored]) return stored;
+      const nav = (navigator.language || '').toLowerCase();
+      if (nav.startsWith('zh')) {
+        // Traditional is signalled by the region subtag (zh-TW, zh-HK, zh-MO)
+        // or by an explicit script subtag (zh-Hant).
+        return (nav.includes('hant') || /(^|[-_])(tw|hk|mo)($|[-_])/.test(nav)) ? 'zh-TW' : 'zh-CN';
+      }
+      return DEFAULT_LOCALE;
+    }
 
     // ───────────── State ─────────────
     let connected = false, agentRunning = false, modelName = '';
@@ -2070,6 +2523,11 @@ function stage0Logic(wsUrl: string): string {
     const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
     let cancelArmTimer = null;
     let stopArmed = false, stopArmTimer = null;
+    let sendSwapTimer = null;
+    /* Which glyph the send button is MEANT to show. Not "what the DOM reads":
+       the morph is deferred, so a button that already looks right can still
+       have a swap in flight, and that swap is the bug — see setSendBtn. */
+    let sendIconWanted = 'send';
     let notifHistory = [];
     let notifOpen = false;
     let settingsOpen = false;
@@ -2138,9 +2596,21 @@ function stage0Logic(wsUrl: string): string {
         // (attach_file), same 24×24 grid as the rest.
         attach_file: ['M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z',
                       'M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z'],
+        // The composer's "+" action. Paths from @material-design-icons/svg
+        // (add) — outlined and filled share one glyph — same grid as the rest.
+        add: ['M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+              'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z'],
         // A generic file chip (draft / insert_drive_file).
         description: ['M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z',
-                      'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z']
+                      'M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z'],
+        // The notification list's per-level leading icons. Paths from
+        // @material-design-icons/svg (info, warning, error), same grid.
+        info: ['M11 7h2v2h-2V7zm0 4h2v6h-2v-6zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
+               'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z'],
+        warning: ['M12 5.99L19.53 19H4.47L12 5.99M12 2 1 21h22L12 2zm1 14h-2v2h2v-2zm0-6h-2v4h2v-4z',
+                  'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z'],
+        error: ['M11 15h2v2h-2v-2zm0-8h2v6h-2V7zm.99-5C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z',
+                'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z']
       };
       for (const name in iconPaths) {
         m.registerIcon(name, 'outlined', {
@@ -2149,27 +2619,33 @@ function stage0Logic(wsUrl: string): string {
         });
       }
       /* m3e-icon's own catch-up (registry observer) is lost whenever an
-         unregistered icon is disconnected even once - the nav-menu-item
-         re-slotting its light DOM on upgrade does exactly that. Re-set the
+         unregistered icon is disconnected even once — a host that re-slots
+         its light DOM on upgrade does exactly that. Re-set the
          name attribute on every icon to force a re-render now that the
          paths are in; anything created after this point resolves directly. */
       document.querySelectorAll('m3e-icon[name]').forEach(el => {
-        const n = el.getAttribute('name');
+        /* The PROPERTY, not the attribute: name is not reflected, so the
+           attribute keeps the markup value forever while the app changes what
+           the icon shows (the send ⇄ stop morph especially). Re-stamping from
+           the attribute would silently revert a running button to 'send'.
+           The '' bounce forces the repaint even where the value is unchanged. */
+        const n = el.name || el.getAttribute('name');
         if (!n) return;
-        el.removeAttribute('name');
-        el.setAttribute('name', n);
+        el.name = '';
+        el.name = n;
       });
+      /* …and if the library landed mid-morph, the send glyph was painted as a
+         ligature with no path behind it. Re-assert its current state now that
+         the paths exist — force, because the state has not changed. */
+      setSendBtn(true);
     }).catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/icon-button').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/button').catch(() => {});
-    // Both are used by the settings panel (the light/dark/auto group and the
-    // thinking-collapse row) but were never imported, so those two controls
-    // rendered as un-upgraded inline elements.
     import('https://esm.sh/@m3e/web@2.7.9/button-group').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/tooltip').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/expansion-panel').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/fab').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/drawer-container').catch(() => {});
-    import('https://esm.sh/@m3e/web@2.7.9/nav-menu').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/menu').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/loading-indicator').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/app-bar').catch(() => {});
@@ -2178,6 +2654,7 @@ function stage0Logic(wsUrl: string): string {
     import('https://esm.sh/@m3e/web@2.7.9/list').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/switch').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/form-field').catch(() => {});
+    import('https://esm.sh/@m3e/web@2.7.9/toolbar').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/textarea-autosize').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/theme').catch(() => {});
     import('https://esm.sh/@m3e/web@2.7.9/bottom-sheet').catch(() => {});
@@ -2203,93 +2680,121 @@ function stage0Logic(wsUrl: string): string {
       }
     }
 
-    // ───────────── Theme (in #settings-panel) ─────────────
-    // A three-way connected button group (light / dark / auto) sits in the
-    // settings panel — former dedicated app-bar button removed. The group
-    // reflects the current value and drives setTheme. m3e-button toggles
-    // can be clicked off, so the handler re-anchors a bare group and keeps
-    // the radios exclusive itself (deterministic even if the group's own
-    // slot-level change handling misses a non-composed event).
+    // ───────────── Theme (in the settings panel) ─────────────
+    // Light / dark / auto is a menu of radio items now: the settings row carries
+    // the value in force, the menu shows all three and draws the library's own
+    // tick. The menus live at the top level (see the markup note in the panel),
+    // so their items are stable elements and take direct listeners — only the
+    // row labels, which live in the remounted content, need host lookups.
     const appTheme = document.getElementById('app-theme');
+    const themeMenu = document.getElementById('theme-menu');
+    const accentMenu = document.getElementById('accent-menu');
+    const accentWallpaper = document.getElementById('accent-wallpaper');
+    // The mobile browser chrome (address bar / task switcher tile) tints from
+    // <meta name="theme-color">, so it follows the accent seed like everything
+    // else.
+    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
+    /* NOT a const object built from t(): that would be evaluated once at
+       boot and would keep the boot locale's words forever, so switching
+       language would leave the settings row showing the old one. A function
+       re-reads the table on every call. */
+    const themeLabel = (val) =>
+      val === 'light' ? t('themeLight') : val === 'dark' ? t('themeDark') : t('themeAuto');
+    // m3e-theme's own baseline: an empty seed means "stock palette", and both
+    // the swatch and the browser chrome must show that, not nothing.
+    const BASELINE_ACCENT = '#6750A4';
     const storedTheme = localStorage.getItem('pi-task-theme') || 'auto';
     if (appTheme) appTheme.scheme = storedTheme;
-    const themeButtons = themeSeg ? Array.from(themeSeg.querySelectorAll('m3e-button')) : [];
+    /* Settings content is cloned into whichever host is active, so every
+       reference into it is resolved through this helper instead of being
+       captured once. */
+    const settingsHost = () => (isWide() ? settingsPanel : settingsSheet);
+    const thinkingCollapseNow = () => settingsHost().querySelector('#thinking-collapse');
+    const themeItems = () => Array.from(themeMenu?.querySelectorAll('m3e-menu-item-radio') || []);
+    const accentItems = () => Array.from(accentMenu?.querySelectorAll('m3e-menu-item-radio') || []);
     const applyThemeSelection = (val) => {
-      for (const b of themeButtons) b.selected = b.getAttribute('data-value') === val;
+      // The checked attribute is observed by the radio item, so setting it is
+      // safe before the lazily loaded module upgrades the element.
+      for (const it of themeItems()) it.toggleAttribute('checked', it.getAttribute('data-value') === val);
+      const lbl = settingsHost().querySelector('#theme-value');
+      if (lbl) lbl.textContent = themeLabel(val);
     };
     applyThemeSelection(storedTheme);
-    if (themeSeg) themeSeg.addEventListener('change', (e) => {
-      const btn = e.target instanceof Element && e.target.closest ? e.target.closest('m3e-button') : null;
-      if (!btn || !themeSeg.contains(btn)) return;
-      if (!btn.selected) { btn.selected = true; return; } // never an empty group
-      for (const b of themeButtons) if (b !== btn) b.selected = false;
-      const next = btn.getAttribute('data-value') || 'auto';
-      if (appTheme) appTheme.scheme = next;
-      localStorage.setItem('pi-task-theme', next);
-      showToast(next === 'auto' ? '跟随系统深浅色' : next === 'dark' ? '已切换为深色模式' : '已切换为浅色模式', 'info');
-    });
+    for (const it of themeItems()) {
+      it.addEventListener('click', () => {
+        const val = it.getAttribute('data-value') || 'auto';
+        if (appTheme) appTheme.scheme = val;
+        localStorage.setItem('pi-task-theme', val);
+        applyThemeSelection(val);
+        themeMenu?.hideAll?.(true);
+        showToast(val === 'auto' ? t('themeFollowSystem') : val === 'dark' ? t('themeSwitchedDark') : t('themeSwitchedLight'), 'info');
+      });
+    }
 
-    // ───────────── Accent color (in #settings-panel) ─────────────
-    // Preset seed dots set <m3e-theme>.color, which regenerates the full M3
+    // ───────────── Accent color (in the settings panel) ─────────────
+    // Preset seeds set <m3e-theme>.color, which regenerates the full M3
     // tonal palette for BOTH light and dark from one seed; an empty seed keeps
-    // the stock baseline (#6750A4). <m3e-theme> writes --md-sys-color-* directly
+    // the stock baseline. <m3e-theme> writes --md-sys-color-* directly
     // onto :root, so every m3e component follows automatically. The seed
     // persists and is re-applied on boot before first paint of the chat surface.
-    const accentList = document.getElementById('accent-list');
-    const accentDots = accentList ? Array.from(accentList.querySelectorAll('.accent-dot')) : [];
     const applyAccent = (seed, persist) => {
-      if (appTheme) appTheme.color = seed || '#6750A4';
-      for (const d of accentDots) d.classList.toggle('selected', (d.getAttribute('data-accent') || '') === seed);
+      if (appTheme) appTheme.color = seed || BASELINE_ACCENT;
+      const chosen = accentItems().find((it) => (it.getAttribute('data-accent') || '') === seed);
+      for (const it of accentItems()) it.toggleAttribute('checked', it === chosen);
+      const host = settingsHost();
+      const swatch = host.querySelector('#accent-value-swatch');
+      if (swatch) swatch.style.background = seed || BASELINE_ACCENT;
+      const lbl = host.querySelector('#accent-value');
+      // A seed that matches no preset came out of a picture: say so rather
+      // than naming a colour the app is not using.
+      const nameKey = chosen && chosen.getAttribute('data-i18n-name');
+      if (lbl) lbl.textContent = chosen ? (nameKey ? t(nameKey) : chosen.getAttribute('data-name') || '') : t('accentCustom');
+      if (themeColorMeta) themeColorMeta.setAttribute('content', (seed || BASELINE_ACCENT).toLowerCase());
       if (persist) localStorage.setItem('pi-task-accent', seed);
     };
     applyAccent(localStorage.getItem('pi-task-accent') || '', false);
-    if (accentList) accentList.addEventListener('click', (e) => {
-      const dot = e.target instanceof Element && e.target.closest ? e.target.closest('.accent-dot') : null;
-      if (!dot || !accentList.contains(dot)) return;
-      applyAccent(dot.getAttribute('data-accent') || '', true);
-    });
-    // The mobile browser chrome (address bar / task switcher tile) tints from
-    // <meta name="theme-color"> — keep it on the seed too, default = baseline.
-    const themeColorMeta = document.querySelector('meta[name="theme-color"]');
-    if (themeColorMeta) {
-      const applyThemeColor = (seed) => { themeColorMeta.setAttribute('content', seed || '#6750a4'); };
-      applyThemeColor(localStorage.getItem('pi-task-accent') || '');
-      if (accentList) accentList.addEventListener('click', (e) => {
-        const dot = e.target instanceof Element && e.target.closest ? e.target.closest('.accent-dot') : null;
-        if (dot && accentList.contains(dot)) applyThemeColor(dot.getAttribute('data-accent') || '');
+    for (const it of accentItems()) {
+      it.addEventListener('click', () => {
+        applyAccent(it.getAttribute('data-accent') || '', true);
+        accentMenu?.hideAll?.(true);
+        const k = it.getAttribute('data-i18n-name');
+        showToast(t('accentSwitched') + (k ? t(k) : it.getAttribute('data-name') || ''), 'info');
       });
+    }
+    /* The row labels read live state, and the content carrying them is cloned
+       afresh every time the panel changes host. */
+    function syncSettingsLabels() {
+      applyThemeSelection(localStorage.getItem('pi-task-theme') || 'auto');
+      applyAccent(localStorage.getItem('pi-task-accent') || '', false);
+      applyLocaleSelection(CURRENT_LOCALE);
     }
 
     // "Extract from image": pick an image, derive its dominant seed color with
     // material-color-utilities (same algorithm as Android's wallpaper theming),
     // and feed it to <m3e-theme> as the new accent seed.
-    const accentExtract = document.getElementById('accent-extract');
-    const accentWallpaper = document.getElementById('accent-wallpaper');
-    if (accentExtract && accentWallpaper) {
-      accentExtract.addEventListener('click', () => accentWallpaper.click());
-      accentWallpaper.addEventListener('change', async () => {
-        const file = accentWallpaper.files && accentWallpaper.files[0];
-        if (!file) return;
-        const url = URL.createObjectURL(file);
-        try {
-          const img = new Image();
-          img.src = url;
-          await img.decode();
-          const { getColorFromImage } = await import('https://esm.sh/@m3e/web@2.7.9/theme');
-          const hex = await getColorFromImage(img);
-          if (appTheme) appTheme.color = hex;
-          for (const d of accentDots) d.classList.remove('selected');
-          localStorage.setItem('pi-task-accent', hex);
-          if (themeColorMeta) themeColorMeta.setAttribute('content', hex);
-          showToast('已从图片提取主题色', 'info');
-        } catch (e) {
-          showToast('提取失败：' + (e && e.message ? e.message : e), 'warning');
-        } finally {
-          URL.revokeObjectURL(url);
-          accentWallpaper.value = '';
-        }
-      });
-    }
+    document.getElementById('accent-extract')?.addEventListener('click', () => {
+      accentMenu?.hideAll?.(true);
+      accentWallpaper?.click();
+    });
+    accentWallpaper?.addEventListener('change', async () => {
+      const file = accentWallpaper.files && accentWallpaper.files[0];
+      if (!file) return;
+      const url = URL.createObjectURL(file);
+      try {
+        const img = new Image();
+        img.src = url;
+        await img.decode();
+        const { getColorFromImage } = await import('https://esm.sh/@m3e/web@2.7.9/theme');
+        const hex = await getColorFromImage(img);
+        applyAccent(hex, true);
+        showToast(t('accentExtracted'), 'info');
+      } catch (e) {
+        showToast(t('extractFailed') + (e && e.message ? e.message : e), 'warning');
+      } finally {
+        URL.revokeObjectURL(url);
+        accentWallpaper.value = '';
+      }
+    });
 
     // ───────────── Status ─────────────
     function fmtTokens(n) {
@@ -2334,18 +2839,27 @@ function stage0Logic(wsUrl: string): string {
     function setModelName(name) {
       if (name === undefined || name === modelName) return;
       modelName = name || '';
-      // The title slot doubles as the model display: before a model is
-      // reported, show the app name muted instead of an empty bar.
-      statusModel.textContent = modelName || 'π-task remote';
-      statusModel.classList.toggle('fallback', !modelName);
+      // The bar's second line: which model is answering. It is no longer a
+      // control (the composer owns switching), so before the first frame
+      // reports one the line says that plainly instead of showing the app name.
+      statusModel.textContent = modelName || t('noModel');
+    }
+    /* One title per session, shared by the sidebar row and the app bar so the
+       two can never disagree: a user-set name, else the first message, else
+       whichever placeholder fits. */
+    function sessionTitle(s) {
+      return s.name || s.firstMessage || (s.unsaved ? t('unsavedSession') : t('emptySession'));
+    }
+    function syncChatTitle() {
+      const cur = sessionData.current;
+      const s = (sessionData.sessions || []).find((x) => x.path === cur);
+      chatTitle.textContent = s ? sessionTitle(s) : 'π-task';
+      chatTitle.title = chatTitle.textContent;
     }
     function updateStatusDot() {
       statusDot.className = !connected ? 'disconnected'
                           : agentRunning ? 'connected running'
                           :                 'connected idle';
-      statusChip.textContent = !connected ? 'disconnected'
-                             : agentRunning ? 'running'
-                             :                 'idle';
       paintCtxWave();
     }
     /* m3e's determinate wavy bar rolls its wave continuously by design and
@@ -2367,10 +2881,57 @@ function stage0Logic(wsUrl: string): string {
         requestAnimationFrame(apply);
       }
     }
-    function setSendBtn() {
+    function setSendBtn(force) {
+      composerBar.classList.toggle('running', agentRunning);
       sendBtn.classList.toggle('running', agentRunning);
       const icon = sendBtn.querySelector('m3e-icon');
-      if (icon) icon.name = agentRunning ? 'stop' : 'send';
+      if (!icon) return;
+      const wanted = agentRunning ? 'stop' : 'send';
+      /* Three ways the glyph could disagree with the tint, so the guard is on
+         the INTENT plus what the DOM really reads — never on the DOM alone:
+           · a flip back to the state already on screen (agent_end → agent_start
+             inside the 120ms morph window) used to return early and let the
+             PENDING timer land its now-wrong glyph, leaving a red button with
+             a send arrow for the whole turn;
+           · the icon library resolving AFTER a flip re-stamps every
+             <m3e-icon name> from its ATTRIBUTE, and name is not reflected, so
+             the attribute still says 'send' long after the property said
+             'stop' (fixed on that side too, below);
+           · force: a re-stamp with no state change at all — that is exactly
+             the "library just landed" case.
+         Every path that proceeds therefore cancels the old timer first, so a
+         glyph can never arrive from a state the app has already left. */
+      if (wanted === sendIconWanted && icon.name === wanted && !force) return;
+      sendIconWanted = wanted;
+      if (sendSwapTimer) { clearTimeout(sendSwapTimer); sendSwapTimer = null; }
+      if (icon.name === wanted) {
+        /* Nothing to morph (or a forced re-stamp): just make sure the glyph is
+           not parked mid-fade and is really rendered from the current name. */
+        sendBtn.classList.remove('swapping');
+        stampSendIcon(icon, wanted);
+        return;
+      }
+      /* Morph, not swap-in-place: fade+shrink out, change the glyph at the
+         bottom of the fade, spring back up. */
+      sendBtn.classList.add('swapping');
+      sendSwapTimer = setTimeout(function () {
+        sendSwapTimer = null;
+        stampSendIcon(icon, wanted);
+        requestAnimationFrame(function () { sendBtn.classList.remove('swapping'); });
+      }, 120);
+    }
+    /* m3e-icon does not reflect name back to the attribute, so left alone the
+       attribute would keep the markup's 'send' forever while the glyph on
+       screen says 'stop' — a DOM that lies about its own state, and a trap for
+       anything that reads the attribute (the library's own catch-up pass used
+       to, and that is half of this bug). Write BOTH, so they can never
+       disagree. And writing the same value again is a no-op Lit never
+       re-renders for — bouncing through '' is what makes a re-stamp (the
+       forced path) actually repaint. */
+    function stampSendIcon(icon, name) {
+      icon.name = '';
+      icon.name = name;
+      if (icon.getAttribute('name') !== name) icon.setAttribute('name', name);
     }
 
     // ───────────── Custom scrollbars ─────────────
@@ -2382,10 +2943,16 @@ function stage0Logic(wsUrl: string): string {
     // rounded command panel both are 28 (corner) - 2.5 (cap radius) = 25.5px,
     // which translates the thumb so its round caps' centers land exactly on
     // the card corners' arc centers — the parallel-shift concentric design.
+    // opts.bottomInset: the end gap at the BOTTOM only, which may be a
+    // function because the chat's scroller reaches the viewport's bottom edge
+    // and its thumb must stop above a band that changes height as you type.
     function attachScrollbar(scroller, host, opts) {
       opts = opts || {};
       const inset = opts.inset != null ? opts.inset : 4;
       const rightInset = opts.rightInset != null ? opts.rightInset : 6;
+      const bottomInset = opts.bottomInset != null ? opts.bottomInset : inset;
+      const bottomGap = () => (typeof bottomInset === 'function' ? bottomInset() : bottomInset);
+      const track = () => scroller.clientHeight - inset - bottomGap();
       const thumb = document.createElement('div');
       thumb.className = 'scroll-thumb';
       host.appendChild(thumb);
@@ -2394,10 +2961,9 @@ function stage0Logic(wsUrl: string): string {
         const max = scroller.scrollHeight - scroller.clientHeight;
         if (max <= 2) { thumb.style.display = 'none'; return; }
         thumb.style.display = 'block';
-        const track = scroller.clientHeight - inset * 2;
         const h = Math.max(28, Math.round(scroller.clientHeight * scroller.clientHeight / scroller.scrollHeight));
         const top = scroller.getBoundingClientRect().top - host.getBoundingClientRect().top
-          + inset + (max ? (scroller.scrollTop / max) * Math.max(0, track - h) : 0);
+          + inset + (max ? (scroller.scrollTop / max) * Math.max(0, track() - h) : 0);
         const right = host.getBoundingClientRect().right - scroller.getBoundingClientRect().right + rightInset;
         thumb.style.height = h + 'px';
         thumb.style.top = top + 'px';
@@ -2420,9 +2986,8 @@ function stage0Logic(wsUrl: string): string {
       thumb.addEventListener('pointermove', (e) => {
         if (!dragging) return;
         const max = scroller.scrollHeight - scroller.clientHeight;
-        const track = scroller.clientHeight - inset * 2;
         const h = parseFloat(thumb.style.height) || 28;
-        scroller.scrollTop = startScrollTop + (e.clientY - startPointerY) * (max / Math.max(1, track - h));
+        scroller.scrollTop = startScrollTop + (e.clientY - startPointerY) * (max / Math.max(1, track() - h));
       });
       const endDrag = (e) => {
         if (!dragging) return;
@@ -2438,12 +3003,28 @@ function stage0Logic(wsUrl: string): string {
       show();
       return { paint };
     }
-    attachScrollbar(chatLog, document.getElementById('chat-wrap'));
-    // The command panel is the rounded card: 28px corner - 2.5px cap = 25.5px
-    // on both axes, so the thumb's end caps sit concentric with its corners.
-    const cmdScrollbar = attachScrollbar(cmdSuggestions, document.getElementById('input-bar'),
-      { inset: 25.5, rightInset: 25.5 });
+    /* The band under the chat is three rows that all come and go — the live
+       task panel, the held bar, and a composer whose field grows as you type
+       and whose attach tray appears. The scroller reserves their sum (a hidden
+       row measures 0), so publish it as ONE measured number that the bottom
+       padding, the fade's anchor and the fab's seat all read, and let the
+       thumb re-seat itself against it. */
+    const bandEls = [inputBar, heldBar, statusPanel];
+    const bandHeight = () => bandEls.reduce((h, el) => h + el.offsetHeight, 0);
+    const chatScroll = attachScrollbar(chatLog, document.getElementById('chat-wrap'), {
+      bottomInset: () => bandHeight() + 4,
+    });
     attachScrollbar(notifList, notifPanel);
+    function publishBandHeight() {
+      const h = bandHeight();
+      if (h) document.documentElement.style.setProperty('--_composer-h', h + 'px');
+      chatScroll.paint();
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+      const bandObserver = new ResizeObserver(publishBandHeight);
+      bandEls.forEach((el) => bandObserver.observe(el));
+    }
+    publishBandHeight();
 
     // ───────────── Scroll tracking ─────────────
     function atBottom() {
@@ -2510,7 +3091,7 @@ function stage0Logic(wsUrl: string): string {
         const ic = document.createElement('m3e-icon');
         ic.setAttribute('name', 'content_copy');
         btn.appendChild(ic);
-        btn.setAttribute('aria-label', '复制代码');
+        btn.setAttribute('aria-label', t('copyCode'));
         b.replaceWith(btn);
       });
     }
@@ -2635,7 +3216,7 @@ function stage0Logic(wsUrl: string): string {
       const ic = document.createElement('m3e-icon');
       ic.setAttribute('name', 'content_copy');
       b.appendChild(ic);
-      b.setAttribute('aria-label', '复制消息');
+      b.setAttribute('aria-label', t('copyMessage'));
       el.appendChild(b);
     }
     chatLog.addEventListener('click', (e) => {
@@ -2901,22 +3482,25 @@ function stage0Logic(wsUrl: string): string {
       if (notifHistory.length > 20) notifHistory.pop();
       if (notifOpen) renderNotifList();
     }
+    /* Both hosts' lists are filled: only one is visible, but the hidden one
+       must not be stale, or crossing the breakpoint would show an old list. */
+    const notifListNow = () => (isWide() ? notifList : notifSheetList);
     function renderNotifList() {
-      if (!notifHistory.length) {
-        notifList.innerHTML = '<div id="notif-empty">还没有通知</div>';
-        return;
-      }
-      const LEVEL_ICON = { error: 'error', warning: 'warning_amber', info: 'info' };
+      const html = notifHistory.length ? notifListHtml() : '<div id="notif-empty">' + t('noNotifications') + '</div>';
+      for (const el of [notifList, notifSheetList]) if (el) el.innerHTML = html;
+    }
+    function notifListHtml() {
+      const LEVEL_ICON = { error: 'error', warning: 'warning', info: 'info' };
       let html = '';
       for (let i = 0; i < notifHistory.length; i++) {
         const n = notifHistory[i];
         html += '<m3e-list-item class="notif-item ' + escHtml(n.level) + '">'
-          + '<m3e-icon slot="start" name="' + (LEVEL_ICON[n.level] || 'info') + '"></m3e-icon>'
-          + '<div slot="headline">' + escHtml(n.message) + '</div>'
+          + '<m3e-icon slot="leading" name="' + (LEVEL_ICON[n.level] || 'info') + '"></m3e-icon>'
+          + '<div>' + escHtml(n.message) + '</div>'
           + '<div slot="supporting-text">' + escHtml(fmtClock(n.ts)) + '</div>'
           + '</m3e-list-item>';
       }
-      notifList.innerHTML = html;
+      return html;
     }
 
     // ───────────── Stage 3: Bell + push ─────────────
@@ -2926,7 +3510,8 @@ function stage0Logic(wsUrl: string): string {
       return localStorage.getItem(THINKING_COLLAPSE_KEY) !== '0';
     }
     function updateThinkingCollapseSwitch() {
-      thinkingCollapse.checked = thinkingAutoCollapse();
+      const el = thinkingCollapseNow();
+      if (el) el.checked = thinkingAutoCollapse();
     }
     function notifyEnabled() {
       return localStorage.getItem(NOTIFY_KEY) === '1'
@@ -2934,69 +3519,96 @@ function stage0Logic(wsUrl: string): string {
         && Notification.permission === 'granted';
     }
     function notifyEnvIssue() {
-      if (typeof Notification === 'undefined') return '此浏览器不支持通知。';
-      if (!window.isSecureContext) return '通知需要 HTTPS。请用 Tailscale https URL 或 localhost 打开。';
+      if (typeof Notification === 'undefined') return t('notifNoPush');
+      if (!window.isSecureContext) return t('notifNeedsHttps');
       const isIOS = /iP(hone|ad|od)/i.test(navigator.userAgent);
       const standalone = navigator.standalone === true
         || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
-      if (isIOS && !standalone) return 'iOS 用户：请先分享 → 添加到主屏幕，再启用通知。';
+      if (isIOS && !standalone) return t('notifIosInstall');
       return null;
     }
     function updateBell() {
       const on = notifyEnabled();
-      notifBtn.classList.toggle('on', on);
-      notifToggle.checked = on;
+      // The bell's LIT state used to be a primary-colour tint via .on; now the
+      // button is a tonal toggle and its pressed fill already means "panel
+      // open", so push-enabled is shown only by the switch in the panel.
+      // Both hosts carry a switch; the invisible one is kept in step so
+      // crossing the breakpoint cannot show a stale toggle.
+      for (const el of [notifToggle, notifSheetToggle]) if (el) el.checked = on;
       updateThinkingCollapseSwitch();
     }
-    // The sheets own their open state now (show/hide), so these only refresh
-    // content before showing and track the flag the app bar mirrors.
+    /* Open/close goes through the host the current form calls for: a class
+       toggle on the dropdown card, show()/hide() on the sheet. The flags stay
+       the app bar's mirror of whichever one is live. */
     function setNotifOpen(open) {
       notifOpen = open;
-      if (open) { renderNotifList(); updateBell(); notifPanel.show(); }
-      else notifPanel.hide();
+      // Tonal toggle: selected IS the open indicator, so the button reads as
+      // pressed exactly while its panel is up. Multi-mode keeps the two
+      // independent (opening settings need not close notifications).
+      notifBtn.selected = open;
+      if (open) { renderNotifList(); updateBell(); }
+      openPanel('notif', open);
     }
     function setSettingsOpen(open) {
       settingsOpen = open;
-      if (open) { updateThinkingCollapseSwitch(); settingsPanel.show(); }
-      else settingsPanel.hide();
+      settingsBtn.selected = open;
+      if (open) { updateThinkingCollapseSwitch(); renderModelMenu(); }
+      openPanel('settings', open);
     }
-    thinkingCollapse.addEventListener('change', () => {
-      localStorage.setItem(THINKING_COLLAPSE_KEY, thinkingCollapse.checked ? '1' : '0');
-      if (thinkingCollapse.checked) {
+    /** Show or hide one panel in whichever form is active. */
+    function openPanel(name, open) {
+      const host = hostOf(name);
+      if (host === panels[name].sheet) {
+        if (open) host.show(); else host.hide();
+      } else if (host === modelMenu) {
+        /* The library's menu owns its own opening (the trigger does it) and its
+           outside click and Escape, so the app only ever closes it — hideAll, so
+           a nested submenu cannot survive the parent going away. */
+        if (!open) host.hideAll(true);
+      } else {
+        host.classList.toggle('open', open);
+        host.setAttribute('aria-hidden', open ? 'false' : 'true');
+      }
+    }
+    document.addEventListener('change', (e) => {
+      const el = thinkingCollapseNow();
+      if (!el || e.target !== el) return;
+      localStorage.setItem(THINKING_COLLAPSE_KEY, el.checked ? '1' : '0');
+      if (el.checked) {
         document.querySelectorAll('m3e-expansion-panel.thinking[open]').forEach((c) => {
           c.open = false;
         });
       }
-      showToast(thinkingCollapse.checked ? 'Thinking 将在结束时收起' : 'Thinking 保持展开', 'info');
+      showToast(el.checked ? t('thinkingWillCollapse') : t('thinkingStaysOpen'), 'info');
     });
     function togglePush() {
       if (localStorage.getItem(NOTIFY_KEY) === '1') {
         localStorage.setItem(NOTIFY_KEY, '0');
         updateBell();
-        showToast('通知已关闭', 'info');
+        showToast(t('notifOff'), 'info');
         return;
       }
       const issue = notifyEnvIssue();
       if (issue) { showToast(issue, 'warning'); return; }
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showToast('此浏览器不支持 Web Push。', 'warning');
+        showToast(t('notifUnsupported'), 'warning');
         return;
       }
       Notification.requestPermission().then((perm) => {
         if (perm !== 'granted') {
-          showToast('通知权限被拒绝，请在浏览器设置中启用。', 'warning');
+          showToast(t('notifPermissionDenied'), 'warning');
           return;
         }
         subscribePush().then((ok) => {
           if (ok) {
             localStorage.setItem(NOTIFY_KEY, '1');
-            showToast('通知已开启。', 'info');
+            showToast(t('notifOn'), 'info');
           } else {
-            showToast('通知订阅失败。', 'warning');
+            showToast(t('notifSubscribeFailed'), 'warning');
           }
           updateBell();
         }).catch((e) => {
-          showToast('通知设置失败：' + (e && e.message ? e.message : e), 'warning');
+          showToast(t('notifSetupFailed') + (e && e.message ? e.message : e), 'warning');
           updateBell();
         });
       });
@@ -3027,7 +3639,7 @@ function stage0Logic(wsUrl: string): string {
         }).then((r) => r.ok));
     }
     function closeModelMenu() {
-      if (modelMenuOpen) modelMenu.hide();
+      if (modelMenuOpen) openPanel('model', false);
     }
     notifBtn.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -3041,95 +3653,142 @@ function stage0Logic(wsUrl: string): string {
       setNotifOpen(false);
       setSettingsOpen(!settingsOpen);
     });
-    // A modal sheet is dismissed by its scrim, its drag handle or Escape, none
-    // of which go through the buttons — so the flags follow the sheet's own
-    // lifecycle events instead of a document click-outside handler.
-    notifPanel.addEventListener('closed', () => { notifOpen = false; });
-    settingsPanel.addEventListener('closed', () => { settingsOpen = false; });
-    notifPanel.addEventListener('opened', () => { notifOpen = true; });
-    settingsPanel.addEventListener('opened', () => { settingsOpen = true; });
+    /* Two ways a panel can close without the buttons: the dropdown's
+       click-outside, and the sheet's scrim / drag handle / Escape. Both feed
+       the same flags. */
+    document.addEventListener('click', (e) => {
+      /* A click inside one of the menus is a click on a control the panel
+         opened, not an outside click: #theme-menu and #accent-menu live at the
+         top level so a sheet cannot clip them, which puts them outside
+         #settings-panel's subtree. */
+      if (e.target instanceof Element && e.target.closest && e.target.closest('m3e-menu')) return;
+      for (const [name, flag] of [['notif', () => notifOpen], ['settings', () => settingsOpen]]) {
+        const host = panels[name].dropdown;
+        if (!host.classList.contains('open')) continue;
+        const btn = name === 'notif' ? notifBtn : settingsBtn;
+        if (host.contains(e.target) || e.target === btn) continue;
+        if (name === 'notif') setNotifOpen(false); else setSettingsOpen(false);
+      }
+    });
+    for (const name of ['notif', 'settings']) {
+      const sheet = panels[name].sheet;
+      if (!sheet) continue;
+      sheet.addEventListener('closed', () => { if (name === 'notif') notifOpen = false; else settingsOpen = false; });
+      sheet.addEventListener('opened', () => { if (name === 'notif') notifOpen = true; else settingsOpen = true; });
+    }
     notifToggle.addEventListener('change', togglePush);
     updateBell();
 
-    // The model pill is a plain button now: the sheet it opens is modal, so
-    // there is nothing to anchor and no menu trigger to nest.
-    modelTrigger.addEventListener('click', (e) => {
-      e.stopPropagation();
-      if (modelMenuOpen) { modelMenu.hide(); return; }
-      anchorWideSheet(modelMenu, modelPicker);
-      modelMenu.show();
-    });
-
-    /* On a wide screen the sheet is an anchored dropdown, and the model pill's
-       position depends on the model name's width — so it is measured, not
-       hardcoded. Clamped to the viewport so a long name near the right edge
-       cannot push the sheet off-screen. */
-    function anchorWideSheet(sheet, anchorEl) {
-      if (!window.matchMedia('(min-width: 601px)').matches) return;
-      const a = anchorEl.getBoundingClientRect();
-      const w = 320;
-      sheet.style.left = Math.max(8, Math.min(a.left, innerWidth - w - 8)) + 'px';
-      sheet.style.right = 'auto';
-    }
-
-    // ───────────── Model picker menu ─────────────
+    // ───────────── Model picker ─────────────
     // Fed by the server's models frame (on connect, on session_start and after
-    // each switch). Rendered as plain rows inside a modal bottom sheet;
-    // choosing one sends set_model, and the fresh frame that comes back
-    // re-renders the tick — no optimistic check, so a rejected switch can't
-    // leave the list lying.
+    // each switch). Two forms: an m3e-menu anchored to the composer's model
+    // button on a wide screen, a segmented action list inside a modal bottom
+    // sheet on a phone. Choosing one sends set_model, and the fresh frame that
+    // comes back re-renders the tick — no optimistic check, so a rejected
+    // switch can't leave the list lying.
     function escAttr(s) {
       return escHtml(s).replace(/"/g, '&quot;');
     }
+    /* The wide form is a real m3e-menu and takes m3e-menu-item-radio rows
+       (the library's own selection, keyboard handling and tick); the sheet form
+       takes m3e-list-action rows in a segmented action list — same two-line
+       content, and the app's own tick in the trailing slot. Both are rendered
+       every time — the hidden one must not go stale, or crossing the breakpoint
+       would show an outdated list. */
     function renderModelMenu() {
       if (!modelCatalog.models.length) {
-        modelList.innerHTML = '<div id="model-empty">暂无可切换的模型</div>';
+        const empty = '<div id="model-empty">' + t('noSwitchableModel') + '</div>';
+        modelMenu.innerHTML = empty;
+        if (modelSheetList) modelSheetList.innerHTML = empty;
         return;
       }
-      let html = '';
+      let menuHtml = '', sheetHtml = '';
       for (const md of modelCatalog.models) {
         const cur = md.spec === modelCatalog.current;
         const provider = md.spec.split('/')[0] || md.spec;
-        // A plain button row inside the sheet: m3e-menu-item-radio only makes
-        // sense inside an m3e-menu, and the sheet is not one.
-        html += '<button type="button" class="model-row' + (cur ? ' current' : '') + '"'
-              + ' data-spec="' + escAttr(md.spec) + '"'
-              + (cur ? ' aria-current="true"' : '') + '>'
-              + '<span class="model-row-main">'
-              + '<span class="model-row-name">' + escHtml(md.name) + '</span>'
-              + '<span class="model-row-spec">' + escHtml(provider) + '</span>'
-              + '</span>'
-              + (cur ? '<m3e-icon class="model-row-check" name="check"></m3e-icon>' : '')
-              + '</button>';
+        menuHtml += '<m3e-menu-item-radio data-spec="' + escAttr(md.spec) + '"'
+                  + (cur ? ' checked' : '') + '>'
+                  // Single root child: the item lays its default-slot content
+                  // out as a flex ROW (leading check + label), so the two text
+                  // lines must live inside one wrapper to stack vertically.
+                  + '<span class="model-row-main">'
+                  + '<span class="model-row-name">' + escHtml(md.name) + '</span>'
+                  + '<span class="model-row-spec">' + escHtml(provider) + '</span>'
+                  + '</span>'
+                  + '</m3e-menu-item-radio>';
+        sheetHtml += '<m3e-list-action class="model-row' + (cur ? ' current' : '') + '"'
+                   + ' data-spec="' + escAttr(md.spec) + '"'
+                   + (cur ? ' aria-current="true"' : '') + '>'
+                   + '<span class="model-row-main">'
+                   + '<span class="model-row-name">' + escHtml(md.name) + '</span>'
+                   + '<span class="model-row-spec">' + escHtml(provider) + '</span>'
+                   + '</span>'
+                   + (cur ? '<m3e-icon slot="trailing" class="model-row-check" name="check"></m3e-icon>' : '')
+                   + '</m3e-list-action>';
       }
-      modelList.innerHTML = html;
+      modelMenu.innerHTML = menuHtml;
+      if (modelSheetList) modelSheetList.innerHTML = sheetHtml;
     }
-    // The trigger opens/closes the menu; we only mirror the state onto the
-    // pill (tonal highlight + caret flip) and refresh the rows on open.
-    // Bottom-sheet lifecycle, not the menu's toggle: the sheet owns the open
-    // state, so the pill mirrors opened/closed and refreshes on opening.
-    modelMenu.addEventListener('opening', () => {
+    /* Two forms, like the other panels: an m3e-menu anchored to the composer's
+       model button on a wide screen, and a modal bottom sheet on a phone.
+
+       The wide form keeps the library's own trigger and its toggle event —
+       that is what anchors the menu, owns its focus ring and Escape handling,
+       and closes it on an outside click. (A click listener on the trigger
+       itself never fires: m3e-menu-trigger stops the event inside itself.)
+       Rows are refreshed when the menu opens, exactly as before. */
+    modelMenu.addEventListener('toggle', () => {
+      const open = modelMenu.isOpen;
+      modelMenuOpen = open;
+      modelBtn.classList.toggle('open', open);
+      if (open) { setNotifOpen(false); setSettingsOpen(false); renderModelMenu(); }
+    });
+    /* Phone form. The handler sits on the BUTTON, not on #model-slot: the
+       trigger wraps the button and stops the click before it bubbles one level
+       further, so a wrapper-level listener would never run and a phone tap
+       would open nothing. On a wide screen this returns immediately and the
+       library's trigger owns the menu. */
+    function toggleModelPhonePanel(e) {
+      if (isWide()) return; // the library's trigger handles the wide form
+      if (e) e.preventDefault();
       setNotifOpen(false);
       setSettingsOpen(false);
+      if (modelMenuOpen) { openPanel('model', false); return; }
       renderModelMenu();
-    });
-    modelMenu.addEventListener('opened', () => {
-      modelMenuOpen = true;
-      modelPicker.classList.add('open');
-    });
-    modelMenu.addEventListener('closed', () => {
-      modelMenuOpen = false;
-      modelPicker.classList.remove('open');
-    });
-    modelMenu.addEventListener('click', (e) => {
-      const row = e.target && e.target.closest ? e.target.closest('.model-row') : null;
-      if (!row) return;
-      const spec = row.getAttribute('data-spec');
+      openPanel('model', true);
+    }
+    modelBtn.addEventListener('click', toggleModelPhonePanel);
+    // Narrow form: the sheet's lifecycle.
+    if (modelSheet) {
+      modelSheet.addEventListener('opened', () => {
+        modelMenuOpen = true;
+        modelBtn.classList.add('open');
+      });
+      modelSheet.addEventListener('closed', () => {
+        modelMenuOpen = false;
+        modelBtn.classList.remove('open');
+      });
+    }
+    /* A pick is a pick in either form: send it, say so, close the panel. The
+       tick only moves when the server's next models frame says it may. */
+    function pickModel(spec) {
       if (!spec || !ws || ws.readyState !== 1) return;
       ws.send(JSON.stringify({ type: 'set_model', spec }));
       const chosen = modelCatalog.models.find((x) => x.spec === spec);
-      showToast(chosen ? '切换模型：' + chosen.name : '切换模型…', 'info');
-      modelMenu.hide();
+      showToast(chosen ? t('modelSwitched') + chosen.name : t('modelSwitching'), 'info');
+      openPanel('model', false);
+    }
+    /* Rows and items are re-created with every catalogue frame, so activation
+       is delegated: on the document for the sheet's action-list rows, and on
+       the menu element (a stable top-level host) for its radio items. */
+    document.addEventListener('click', (e) => {
+      const row = e.target instanceof Element && e.target.closest ? e.target.closest('.model-row') : null;
+      if (row) pickModel(row.getAttribute('data-spec'));
+    });
+    modelMenu.addEventListener('click', (e) => {
+      const item = e.target instanceof Element && e.target.closest
+        ? e.target.closest('m3e-menu-item-radio') : null;
+      if (item) pickModel(item.getAttribute('data-spec'));
     });
 
     // ───────────── Session sidebar ─────────────
@@ -3153,14 +3812,16 @@ function stage0Logic(wsUrl: string): string {
       // brand-new conversation): it has no timestamp or message count to show,
       // and calling it 空会话 would read as some stale empty conversation
       // instead of the one being typed into right now.
-      it.querySelector('.s-title').textContent =
-        s.name || s.firstMessage || (s.unsaved ? '（新会话·尚未保存）' : '（空会话）');
+      it.querySelector('.s-title').textContent = sessionTitle(s);
       it.querySelector('.s-sub').textContent = s.unsaved
-        ? '当前会话 · 尚未写入磁盘'
-        : fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' 条消息';
+        ? t('currentSessionUnsaved')
+        : fmtSessionTime(s.modified) + ' · ' + s.messageCount + ' ' + t('messageCount');
       // toggleAttribute is a no-op when unchanged: the freshly clicked item
       // already carries native selected, so the indicator's grow animation
-      // is never restarted by a data refresh.
+      // is never restarted by a data refresh. The property is the one the
+      // component writes when its own click handler selects a row, so it is
+      // stamped too — an attribute-only write would leave a stale property.
+      it.selected = !!cur;
       it.toggleAttribute('selected', !!cur);
       // The trash button sits on every row. The CURRENT row keeps it
       // disabled while the model is replying (the server refuses the same
@@ -3172,8 +3833,9 @@ function stage0Logic(wsUrl: string): string {
         del = document.createElement('button');
         del.type = 'button';
         del.className = 's-del';
-        del.title = '删除会话';
-        del.setAttribute('aria-label', '删除会话');
+        del.slot = 'trailing';
+        del.title = t('deleteSession');
+        del.setAttribute('aria-label', t('deleteSession'));
         const di = document.createElement('m3e-icon');
         di.setAttribute('name', 'delete');
         del.appendChild(di);
@@ -3184,68 +3846,64 @@ function stage0Logic(wsUrl: string): string {
           e.stopPropagation();
           openSessionDelete(it);
         });
-        it.querySelector('.s-label').appendChild(del);
+        it.appendChild(del);
       }
       del.disabled = !!cur && agentRunning;
-      del.title = del.disabled ? '模型正在回复，暂时无法删除' : '删除会话';
+      del.title = del.disabled ? t('deleteBusy') : t('deleteSession');
     }
     // The current row's trash greys out for the whole agent run and comes
     // back when the reply ends. Called from every agentRunning flip and at
     // the end of renderSessions, so a data refresh re-derives the state too.
     function syncDeleteStates() {
-      for (const it of sessionList.querySelectorAll('m3e-nav-menu-item')) {
+      for (const it of sessionList.querySelectorAll('m3e-list-option')) {
         const del = it.querySelector('.s-del');
         if (!del) continue;
         const cur = it._sessionPath === sessionData.current;
         del.disabled = cur && agentRunning;
-        del.title = del.disabled ? '模型正在回复，暂时无法删除' : '删除会话';
+        del.title = del.disabled ? t('deleteBusy') : t('deleteSession');
       }
     }
     function renderSessions() {
       const sessions = sessionData.sessions || [];
       if (!sessions.length) {
-        sessionList.innerHTML = '<div class="s-empty">还没有其他会话</div>';
+        sessionList.innerHTML = '<div class="s-empty">' + t('noOtherSessions') + '</div>';
         return;
       }
       // Keyed in-place update: when the catalogue is unchanged (same paths,
       // same order), sync text + selection on the existing items instead of
       // rebuilding. Recreating the nodes re-mounts the selected item, which
       // replays the indicator animation and flashes the whole row.
-      const existing = sessionList.querySelectorAll('m3e-nav-menu-item');
+      const existing = sessionList.querySelectorAll('m3e-list-option');
       const sameOrder = existing.length === sessions.length
         && [...existing].every((el, i) => el._sessionPath === sessions[i].path);
       if (!sameOrder) {
         sessionList.innerHTML = '';
         for (const s of sessions) {
-          const it = document.createElement('m3e-nav-menu-item');
+          const it = document.createElement('m3e-list-option');
           const ic = document.createElement('m3e-icon');
-          ic.slot = 'icon';
+          ic.slot = 'leading';
           ic.setAttribute('name', 'history');
-          const label = document.createElement('span');
-          label.slot = 'label';
-          label.className = 's-label';
           const title = document.createElement('span');
           title.className = 's-title';
           const sub = document.createElement('span');
+          sub.slot = 'supporting-text';
           sub.className = 's-sub';
-          label.append(title, sub);
-          it.append(ic, label);
+          it.append(ic, title, sub);
           it.addEventListener('click', e => {
             // Trash taps bubble here too — the confirm-dialog flow owns them.
             if (e.target && e.target.closest && e.target.closest('.s-del')) return;
             drawer.start = false;
             if (!ws || ws.readyState !== 1) return;
             // Compare against the SERVER's current session, never against the
-            // selected attribute. m3e-nav-menu-item marks the row that was
-            // clicked (selected + aria-current) from INSIDE its own shadow DOM,
-            // and that mutation lands before this host-level bubble listener
-            // runs — so an attribute check swallowed every real tap and no row
-            // could ever be switched (a synthetic el.click() bypasses the
-            // shadow internals and looks fine, which is how it hid). Path
-            // equality is the same fact with no timing trap.
+            // row's selected state. m3e-list-option marks the clicked row (and
+            // the selection list clears the previous one) from inside the
+            // component, and that mutation lands before this host-level bubble
+            // listener runs — so a state check would swallow every real tap and
+            // no row could ever be switched. Path equality is the same fact
+            // with no timing trap.
             if (it._sessionPath === sessionData.current) return;
             ws.send(JSON.stringify({ type: 'switch_session', path: it._sessionPath }));
-            showToast('切换会话…', 'info');
+            showToast(t('sessionSwitching'), 'info');
           });
           syncSessionItem(it, s, s.path === sessionData.current);
           sessionList.appendChild(it);
@@ -3262,7 +3920,7 @@ function stage0Logic(wsUrl: string): string {
     function openSessionDelete(it) {
       const title = it.querySelector('.s-title').textContent || '';
       pendingDeletePath = it._sessionPath;
-      sessionDeleteText.textContent = '删除「' + title + '」？删除后无法恢复。';
+      sessionDeleteText.textContent = t('confirmDeleteSession', title);
       sessionDeleteDialog.open = true;
     }
     // Plain buttons + explicit open=false, exactly the prompt-card's mechanism
@@ -3280,7 +3938,7 @@ function stage0Logic(wsUrl: string): string {
       sessionDeleteDialog.open = false;
       if (!path) return;
       if (!ws || ws.readyState !== 1) {
-        showToast('删除会话失败：连接已断开', 'error');
+        showToast(t('sessionDeleteFailed'), 'error');
         return;
       }
       ws.send(JSON.stringify({ type: 'delete_session', path }));
@@ -3319,31 +3977,32 @@ function stage0Logic(wsUrl: string): string {
       cmdSuggestions.innerHTML = '';
       if (!cmdActive.length) { cmdSuggestions.style.display = 'none'; return; }
       cmdSuggestions.style.display = 'block';
-      const list = document.createElement('m3e-list');
+      // The notif and settings lists' own component: a segmented m3e-list whose
+      // rows are m3e-list-item, so the metrics, the per-position corners, the
+      // plate and the supporting-text line all come from the library — as does
+      // the scrolling, which is why no hand-drawn thumb is painted for this
+      // panel any more.
+      let html = '<m3e-list variant="segmented">';
       cmdActive.forEach((cmd, i) => {
-        const el = document.createElement('m3e-list-item');
-        // m3e-list-item observes NO attributes (observedAttributes is empty),
-        // so mdui's rounded/active/headline/description were all ignored: the
-        // row rendered empty and square inside the rounded panel. Feed it
-        // through its slots instead — default slot = label, supporting-text =
-        // second line — and let the stylesheet's --m3e-list-item-container-*
-        // tokens give it the rounded plate + highlight (concentric with the
-        // panel: 28 − 8 = 20).
-        el.className = 'cmd-row' + (i === cmdIndex ? ' active' : '');
-        const label = document.createElement('span');
-        label.className = 'cmd-name';
-        label.textContent = cmd.name;
-        const desc = document.createElement('span');
-        desc.className = 'cmd-desc';
-        desc.setAttribute('slot', 'supporting-text');
-        desc.textContent = cmd.desc;
-        el.append(label, desc);
-        el.addEventListener('mousedown', (e) => { e.preventDefault(); pickCmd(i); });
-        list.appendChild(el);
+        html += '<m3e-list-item' + (i === cmdIndex ? ' class="active"' : '')
+              + ' data-i="' + i + '">'
+              + '<span class="cmd-name">' + escHtml(cmd.name) + '</span>'
+              + '<span slot="supporting-text">' + escHtml(cmd.desc) + '</span>'
+              + '</m3e-list-item>';
       });
-      cmdSuggestions.appendChild(list);
-      if (cmdScrollbar) cmdScrollbar.paint();
+      cmdSuggestions.innerHTML = html + '</m3e-list>';
     }
+    // Bound once, outside the render: the panel element survives every
+    // re-render, so registering per render would stack duplicate handlers.
+    // mousedown, not click — pressing a row must not move focus out of the
+    // field — and mousedown retargets to the m3e-list-item host, which is what
+    // makes one delegated handler cover rows parsed from the string above.
+    cmdSuggestions.addEventListener('mousedown', (e) => {
+      const row = (e.target instanceof Element ? e.target.closest('m3e-list-item') : null);
+      if (!row) return;
+      e.preventDefault();
+      pickCmd(Number(row.dataset.i));
+    });
     function pickCmd(i) {
       const cmd = cmdActive[i];
       if (!cmd) return;
@@ -3386,7 +4045,7 @@ function stage0Logic(wsUrl: string): string {
           glyph.style.fontSize = '1.1rem';
           const name = document.createElement('span');
           name.className = 'attach-name';
-          name.textContent = a.pending ? '上传中… ' + a.name : a.name;
+          name.textContent = a.pending ? t('uploading') + a.name : a.name;
           chip.append(glyph, name);
           if (!a.pending) {
             const size = document.createElement('span');
@@ -3398,8 +4057,8 @@ function stage0Logic(wsUrl: string): string {
         const rm = document.createElement('button');
         rm.type = 'button';
         rm.className = 'attach-remove';
-        rm.title = '移除附件';
-        rm.setAttribute('aria-label', '移除附件');
+        rm.title = t('removeAttachment');
+        rm.setAttribute('aria-label', t('removeAttachment'));
         rm.textContent = '\u00d7';
         rm.addEventListener('click', (e) => {
           e.preventDefault();
@@ -3416,15 +4075,15 @@ function stage0Logic(wsUrl: string): string {
     }
     function addFiles(files) {
       if (!files || !files.length) return;
-      if (!ws || ws.readyState !== 1) { showToast('连接已断开，无法上传附件', 'error'); return; }
+      if (!ws || ws.readyState !== 1) { showToast(t('uploadOffline'), 'error'); return; }
       const list = Array.prototype.slice.call(files);
       for (const file of list) {
-        if (file.size === 0) { showToast('跳过空文件：' + file.name, 'warning'); continue; }
+        if (file.size === 0) { showToast(t('skipEmptyFile') + file.name, 'warning'); continue; }
         if (file.size > MAX_ATTACHMENT_BYTES) {
-          showToast('文件过大（上限 25 MB）：' + file.name, 'error');
+          showToast(t('fileTooLarge') + file.name, 'error');
           continue;
         }
-        if (pendingAttachments.length >= 20) { showToast('一次最多 20 个附件', 'warning'); break; }
+        if (pendingAttachments.length >= 20) { showToast(t('tooManyAttachments'), 'warning'); break; }
         const local = {
           localId: Math.random().toString(36).slice(2),
           name: file.name,
@@ -3449,18 +4108,45 @@ function stage0Logic(wsUrl: string): string {
           .catch(err => {
             pendingAttachments = pendingAttachments.filter(x => x !== local);
             renderAttachments();
-            showToast('上传失败：' + file.name + '（' + (err && err.message || err) + '）', 'error');
+            showToast(t('uploadFailed') + file.name + '（' + (err && err.message || err) + '）', 'error');
           });
       }
       renderAttachments();
     }
-    attachBtn.addEventListener('click', () => {
-      if (attachBtn.disabled) return;
+    /* One picker for both entry points. accept is set at open time and dropped
+       again on change AND cancel — a dismissed picker fires no change, so the
+       image-only filter would otherwise stick and block the next file. */
+    function openPicker(imagesOnly) {
+      attachInput.accept = imagesOnly ? 'image/*' : '';
       attachInput.click();
+    }
+    galleryBtn.addEventListener('click', () => {
+      if (galleryBtn.disabled) return;
+      openPicker(true);
     });
+    addMenu.addEventListener('toggle', () => {
+      addBtn.classList.toggle('open', addMenu.isOpen);
+    });
+    addMenu.addEventListener('click', (e) => {
+      const item = e.target instanceof Element && e.target.closest
+        ? e.target.closest('m3e-menu-item[data-add]') : null;
+      if (!item) return;
+      addMenu.hide();
+      const kind = item.getAttribute('data-add');
+      if (kind === 'clear') {
+        if (!pendingAttachments.length) return;
+        pendingAttachments = [];
+        renderAttachments();
+        showToast(t('attachmentsCleared'), 'info');
+        return;
+      }
+      openPicker(kind === 'image');
+    });
+    attachInput.addEventListener('cancel', () => { attachInput.accept = ''; });
     attachInput.addEventListener('change', () => {
       addFiles(attachInput.files);
       attachInput.value = '';
+      attachInput.accept = '';
     });
     // Paste: images (and any other clipboard files) land as attachments; plain
     // text keeps the textarea's own handling. Gated on the composer being the
@@ -3519,32 +4205,92 @@ function stage0Logic(wsUrl: string): string {
     function refreshComposer() {
       updateStatusDot();
       const promptOpen = activePromptId !== null;
-      inputEl.disabled = !connected || promptOpen;
-      attachBtn.disabled = !connected || promptOpen;
-      attachBtn.title = !connected ? '连接已断开' : '添加图片或文件';
+      const blocked = !connected || promptOpen;
+      const why = !connected ? t('disconnectedSuffix') : promptOpen ? t('answerPromptFirst') : '';
+      inputEl.disabled = blocked;
+      addBtn.disabled = blocked;
+      galleryBtn.disabled = blocked;
+      modelBtn.disabled = blocked;
+      addBtn.title = t('addAttachment') + why;
+      galleryBtn.title = t('pickImage') + why;
+      modelBtn.title = t('switchModel') + why;
+      if (blocked && addMenu.isOpen) addMenu.hide();
+      /* These three are the live composer's own states, and unlike the idle
+         placeholder they are set from JS every refresh — so they read t()
+         directly and need no marking. */
       inputEl.placeholder = agentRunning
-        ? 'steers the live turn'
+        ? t('placeholderLiveTurn')
         : (runHolding
-            ? 'held for the next task turn'
-            : 'type a message… (/ 查看命令)');
-      const readyAttachments = pendingAttachments.filter(a => !a.pending).length;
+            ? t('placeholderHeld')
+            : t('inputPlaceholder'));
       if (agentRunning && !promptOpen) {
-        sendBtn.classList.add('stop');
         sendBtn.disabled = !connected;
-        if (!stopArmed) sendBtn.title = 'Send → Stop';
+        /* No title while running: the m3e-tooltip carries this button's
+           explanation, and a native title on top of it is a second, delayed
+           bubble with the same words (in English, where the rest of this UI
+           is Chinese). The tooltip is the one that can be shown on demand,
+           so the native fallback is dropped rather than duplicated. */
+        sendBtn.removeAttribute('title');
       } else {
         disarmStop();
-        sendBtn.classList.remove('stop');
         // An attachment with no text is still a message ("look at this"), so the
         // button unlocks on files alone — but never while an upload is in flight.
         sendBtn.disabled = !connected || promptOpen || uploadsBusy();
-        sendBtn.title = 'Send';
+        sendBtn.title = t('send');
       }
+      syncStopTip();
+      syncComposerCompact();
+    }
+    /* The tooltip is the discoverability answer for a gesture the glyph cannot
+       explain: stop takes TWO taps, and nothing about a red square says so.
+       It is offered only where it can be true — running, connected, and no
+       question card up (a blocked button never arms) — and is withdrawn the
+       instant it stops being true, because a tooltip describing a state the
+       button has left is worse than none.
+       m3e-tooltip also refuses to show for a disabled control on its own, so
+       the disabled gate is belt-and-braces; the real reason to drive it here
+       is the armed state, where the message must change. */
+    function syncStopTip() {
+      if (!stopTip) return;
+      stopTip.textContent = stopArmed ? t('stopConfirmHint') : t('stopArmHint');
+      const live = agentRunning && connected && activePromptId === null && !sendBtn.disabled;
+      stopTip.disabled = !live;
+      if (!live) hideStopTip();
+    }
+    function showStopTip() {
+      if (!stopTip || stopTip.disabled) return;
+      /* Async: the module is imported lazily, so the element may still be a
+         plain tag with no show() — and show() is async itself (it awaits the
+         anchor position). */
+      Promise.resolve(stopTip.show && stopTip.show()).catch(() => {});
+    }
+    function hideStopTip() {
+      if (!stopTip) return;
+      Promise.resolve(stopTip.hide && stopTip.hide()).catch(() => {});
+    }
+    /* Narrow screens give the field the action group's width while a message is
+       actually being written — a phone keyboard plus three 40px discs and a
+       two-word draft leaves the textarea nothing. Wide screens keep the group
+       always: there the field is never the scarce resource. */
+    function syncComposerCompact() {
+      composerBar.classList.toggle('compact',
+        !isWide() && document.activeElement === inputEl && !!inputEl.value);
     }
     function disarmStop() {
       stopArmed = false;
       if (stopArmTimer) { clearTimeout(stopArmTimer); stopArmTimer = null; }
-      if (agentRunning) sendBtn.classList.remove('armed');
+      /* Unconditional, and NOT "only while running" as it used to be: the
+         arm is also dropped when a turn ENDS (agentRunning already false by
+         then), and that guard made the class survive exactly the case that
+         matters — a button parked at the armed error-red on an idle
+         composer, which reads as "still stopping" forever. */
+      sendBtn.classList.remove('armed');
+      /* Order matters: stopArmed is already false, so syncStopTip re-points
+         the text at the un-armed wording before the bubble is dismissed —
+         otherwise a button that has just left the armed state would show
+         "再次点击以停止" fading out, which now describes nothing. */
+      syncStopTip();
+      hideStopTip();
     }
     function sendInterrupt() {
       if (ws && ws.readyState === 1) {
@@ -3554,18 +4300,32 @@ function stage0Logic(wsUrl: string): string {
     function onSendClick() {
       if (agentRunning && activePromptId === null) {
         if (stopArmed) { disarmStop(); sendInterrupt(); return; }
-        stopArmed = true;
-        sendBtn.classList.add('armed');
-        if (stopArmTimer) clearTimeout(stopArmTimer);
-        stopArmTimer = setTimeout(() => { stopArmed = false; sendBtn.classList.remove('armed'); }, 3000);
+        armStop();
         return;
       }
       sendMessage();
     }
+    /* First tap of the stop gesture. Arms, and says out loud what the second
+       tap will do — the tooltip pops NOW, not on hover, because this is the
+       moment the user is holding a half-finished gesture and wondering.
+       m3e-tooltip hides itself on the control's click, so this has to be
+       ordered after its own handler has run: a rAF's delay is enough, and
+       cheaper than fighting the library's listener order.
+       touch-gestures is off, so on a phone this never competes with the
+       long-press; the tooltip is hover/focus decoration that the tap
+       supplements, not a third way to trigger it. */
+    function armStop() {
+      stopArmed = true;
+      sendBtn.classList.add('armed');
+      if (stopArmTimer) clearTimeout(stopArmTimer);
+      stopArmTimer = setTimeout(disarmStop, 3000);
+      syncStopTip();
+      requestAnimationFrame(showStopTip);
+    }
     function sendMessage() {
       const text = (inputEl.value || '').trim();
       if (!ws || ws.readyState !== 1) return;
-      if (uploadsBusy()) { showToast('附件还在上传…', 'warning'); return; }
+      if (uploadsBusy()) { showToast(t('attachmentsStillUploading'), 'warning'); return; }
       const ids = pendingAttachments.map(a => a.id).filter(Boolean);
       if (!text && ids.length === 0) return;
       // Slash commands are text-only on the server (they parse an argument
@@ -3593,17 +4353,32 @@ function stage0Logic(wsUrl: string): string {
       }
     }
     sendBtn.addEventListener('click', onSendClick);
+    /* A pinyin/kanji candidate list is committed with Enter, and that Enter must
+       not also send the half-typed line: isComposing is the modern flag, keyCode
+       229 the legacy one some engines still report on the committing event. */
+    function imeComposing(e) { return e.isComposing || e.keyCode === 229; }
     inputEl.addEventListener('keydown', (e) => {
-      if (cmdActive.length > 0) {
+      if (cmdActive.length > 0 && !imeComposing(e)) {
         if (e.key === 'ArrowDown') { e.preventDefault(); cmdIndex = Math.min(cmdIndex + 1, cmdActive.length - 1); renderSuggestions(); return; }
         if (e.key === 'ArrowUp')   { e.preventDefault(); cmdIndex = Math.max(cmdIndex - 1, 0); renderSuggestions(); return; }
         if (e.key === 'Tab')       { e.preventDefault(); pickCmd(cmdIndex >= 0 ? cmdIndex : 0); return; }
         if (e.key === 'Escape')    { cmdActive = []; cmdIndex = -1; renderSuggestions(); return; }
         if (e.key === 'Enter' && !e.shiftKey && cmdIndex >= 0) { e.preventDefault(); pickCmd(cmdIndex); return; }
       }
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+      if (e.key === 'Enter' && !e.shiftKey && !imeComposing(e)) { e.preventDefault(); sendMessage(); }
     });
-    inputEl.addEventListener('input', () => { updateSuggestions(); });
+    /* The toolbar keeps a roving tabindex over its buttons, and its keydown
+       listener is the slot's — the textarea is one of the "interactive elements"
+       it collects, so a bare ArrowLeft would move focus to a button instead of
+       the caret. Swallowing the event before it reaches the slot leaves the
+       caret alone; the toolbar still keys its buttons off clicks. */
+    composerPill.addEventListener('keydown', (e) => {
+      if (e.target === inputEl) e.stopPropagation();
+    });
+    inputEl.addEventListener('input', () => { updateSuggestions(); syncComposerCompact(); });
+    inputEl.addEventListener('focus', syncComposerCompact);
+    inputEl.addEventListener('blur', syncComposerCompact);
+    window.addEventListener('resize', syncComposerCompact);
 
     // ───────────── Stage 3: Prompt dialog ─────────────
     function answer(value) {
@@ -3761,8 +4536,8 @@ function stage0Logic(wsUrl: string): string {
           const left = Math.max(0, Math.ceil((until - Date.now()) / 1000));
           const glyph = SPIN[frame++ % SPIN.length];
           reconnectMsg.textContent = left > 0
-            ? glyph + '  connection lost — retrying in ' + left + 's'
-            : glyph + '  reconnecting…';
+            ? glyph + '  ' + t('connectionLostRetrying', left)
+            : glyph + '  ' + t('reconnecting');
         };
         if (reconnectAnim) clearInterval(reconnectAnim);
         paint();
@@ -3829,11 +4604,12 @@ function stage0Logic(wsUrl: string): string {
           // The sheet's own flag, not modelMenuOpen: the opened event has not
           // fired yet while the opening animation runs, so a catalogue that
           // arrives during it would otherwise leave the list showing stale rows.
-          if (modelMenu.open) renderModelMenu();
+          if (modelMenuOpen) renderModelMenu();
           break;
         case 'sessions':
           sessionData = {current: m.current || null, sessions: m.sessions || []};
           renderSessions();
+          syncChatTitle();
           break;
         case 'agent_start':
           autoScroll = true;
@@ -3939,6 +4715,17 @@ function stage0Logic(wsUrl: string): string {
           setModelName(m.model);
           refreshComposer(); setSendBtn(); syncDeleteStates();
           setContextBar(m.contextUsage);
+          /* pi only writes a session file once it holds an assistant message, so
+             THIS is the frame after which the conversation the bar names can
+             actually be named. Re-ask while the current session is still the
+             synthesized unsaved row (or has no row at all) — once a persisted
+             row exists, nothing about the title can change from here. */
+          {
+            const cur = (sessionData.sessions || []).find((x) => x.path === sessionData.current);
+            if (ws && ws.readyState === 1 && (!cur || cur.unsaved)) {
+              ws.send(JSON.stringify({ type: 'list_sessions' }));
+            }
+          }
           break;
         case 'context':
           setContextBar(m.contextUsage);
@@ -4049,6 +4836,18 @@ function stage0Logic(wsUrl: string): string {
     window.addEventListener('resize', setAppHeight);
     window.addEventListener('orientationchange', setAppHeight);
 
+
+    /* Locale comes FIRST, before anything paints: applyLocale's repaint would
+       otherwise run against markup that has already been rendered in the old
+       language, and several of the renderers below (sessions, menus,
+       notifications) build subtrees that must be built against the new one.
+       The stored choice wins; on a first visit navigator.language only
+       suggests which of the three to start in. */
+    const startLocale = initialLocale();
+    CURRENT_LOCALE = startLocale;
+    document.documentElement.lang = startLocale;
+    paintStaticI18n(document);
+    renderLocaleMenu();
 
     setSendBtn();
     refreshComposer();

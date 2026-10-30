@@ -36,7 +36,7 @@ describe('mduiHtml()', () => {
             'input',
             'send-btn',
             'reconnect-overlay',
-            'model-picker',
+            'chat-title',
             'model-menu',
             'prompt-card',
             'status-panel'
@@ -221,21 +221,279 @@ describe('mduiHtml()', () => {
         expect(m![0]).toContain('textContent = text')
     })
 
-    it('sizes both composer buttons to the single-line field height and centres them', () => {
+    it('builds the composer from standard m3e components, not hand-rolled divs', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
-        // One shared control size, pinned in px to m3e's hardcoded 56px field
-        // height, so neither button can drift from the field it sits beside.
-        expect(out).toContain('--composer-control: 56px')
-        for (const id of ['send-btn', 'attach-btn']) {
-            const m = out.match(new RegExp(`m3e-icon-button#${id}\\s*\\{[^}]*\\}`))
-            expect(m).not.toBeNull()
-            // The rule must size the button AND centre it on the field's midline,
-            // never stretch it with the textarea.
-            expect(m![0]).toContain('height: var(--composer-control)')
-            expect(m![0]).toContain('align-self: center')
-            expect(m![0]).not.toContain('align-self: stretch')
-            expect(m![0]).not.toContain('align-self: flex-end')
+        // Outer capsule = the library's vibrant rounded toolbar; inner = the
+        // pill that carries the field, the loader and the trailing button.
+        expect(out).toMatch(/<m3e-toolbar id="composer-bar" variant="vibrant" shape="rounded">/)
+        expect(out).toContain("import('https://esm.sh/@m3e/web@2.7.9/toolbar')")
+        const bar = out.match(/<m3e-toolbar id="composer-bar"[\s\S]*?<\/m3e-toolbar>/)![0]
+        for (const id of ['add-btn', 'gallery-btn', 'model-btn']) {
+            // The reference's three: attach menu, gallery, model — all the
+            // library's 40px (small) buttons, the flat standard variant.
+            expect(bar).toMatch(new RegExp(`<m3e-icon-button id="${id}" size="small" variant="standard"`))
         }
+        // Trailing button stacked INSIDE the pill, with the loader beside it.
+        const pill = bar.match(/<div id="composer-pill">[\s\S]*?<\/m3e-toolbar>/)![0]
+        expect(pill).toContain('<m3e-icon-button id="send-btn" size="small" variant="filled"')
+        expect(pill).toContain('<m3e-loading-indicator id="composer-loading" variant="contained"')
+        expect(pill).toContain('<m3e-form-field variant="filled" hide-subscript="always">')
+        expect(pill).toContain('<m3e-textarea-autosize for="input" min-rows="1" max-rows="6">')
+    })
+
+    it('derives every composer radius from the fixed outer one', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        const bar = out.match(/#composer-bar \{[\s\S]*?\n\}/)![0]
+        expect(bar).toContain('--c-outer-r: 36px')
+        expect(bar).toContain('--c-inner-r: calc(var(--c-outer-r) - var(--c-gap))')
+        expect(bar).toContain('--c-inset: calc(var(--c-inner-r) - var(--c-btn) / 2)')
+        expect(bar).toContain('--c-bar-min: calc(var(--c-field-min) + 2 * var(--c-gap))')
+        // Pitfall 1: the library's rounded shape is corner.full, which turns a
+        // six-line composer into a giant capsule. The radius must be the token.
+        expect(bar).toContain('--m3e-toolbar-rounded-shape: var(--c-outer-r)')
+        expect(bar).toContain('--m3e-toolbar-rounded-padding: var(--c-gap)')
+        // Nothing downstream may hardcode the derived numbers.
+        for (const derived of ['28px', '72px']) expect(bar).not.toContain(derived)
+    })
+
+    it('sits the action group and the pill on the field\u2019s bottom baseline', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Pitfall 5: the toolbar row is align-items:center, so both children
+        // must be pulled to the bottom edge explicitly.
+        for (const id of ['composer-actions', 'composer-pill']) {
+            const rule = out.match(new RegExp(`#${id} \\{[^}]*\\}`))![0]
+            expect(rule).toContain('align-self: flex-end')
+        }
+        // 8px of its own bottom padding puts a button centre 16px from the
+        // outer edge — the same 16px it has top and bottom, i.e. concentric.
+        const actions = out.match(/#composer-actions \{[^}]*\}/)![0]
+        expect(actions).toContain('padding-bottom: var(--c-gap)')
+        expect(actions).toContain('margin-inline-start: var(--c-gap)')
+        // The trailing disc is corner-stacked on the pill, inset by the derived
+        // 8px (28 \u2212 40/2), not by a literal.
+        const send = out.match(/m3e-icon-button#send-btn \{[^}]*\}/)![0]
+        expect(send).toContain('position: absolute')
+        expect(send).toContain('inset-inline-end: var(--c-inset)')
+        expect(send).toContain('bottom: var(--c-inset)')
+    })
+
+    it('paints one opaque capsule surface instead of a field over a gap', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Pitfall 4: with the pill transparent, the vibrant toolbar shows
+        // through wherever the loader or the button overlaps the field. The
+        // pill must stay OPAQUE (here matching the page background, not a
+        // raised grey surface-container) so the toolbar behind never bleeds
+        // through the middle.
+        const pill = out.match(/#composer-pill \{[^}]*\}/)![0]
+        expect(pill).toContain('border-radius: var(--c-inner-r)')
+        expect(pill).toContain('background: var(--md-sys-color-surface)')
+        expect(pill).toContain('padding-inline-end: var(--c-reserve)')
+        // ...and the field's own container is silenced so it does not paint a
+        // second layer at a second radius.
+        const field = out.match(/#composer-pill > m3e-form-field \{[^}]*\}/)![0]
+        expect(field).toContain('--m3e-form-field-container-color: transparent')
+        // The filled variant's underline is .base::before's bottom border: 1px
+        // drawn from --m3e-form-field-outline-color at rest, 3px from
+        // --m3e-form-field-focused-outline-color once the field has focus. A
+        // floating capsule must carry neither, or the line appears as soon as
+        // the user starts typing.
+        expect(field).toContain('--m3e-form-field-outline-color: transparent')
+        expect(field).toContain('--m3e-form-field-focused-outline-color: transparent')
+        // …and where the library assigns nothing (blocked/disabled field) the
+        // border falls back to currentColor, so the internal property is pinned too.
+        expect(field).toContain('--_form-field-outline-color: transparent')
+        // Neither grey overlay may paint: the 8% onSurface hover wash and the 4%
+        // disabled container block both come from a color-mix on these tokens.
+        expect(field).toContain('--m3e-form-field-hover-container-color: transparent')
+        expect(field).toContain('--m3e-form-field-disabled-container-color: transparent')
+    })
+
+    it('keeps every composer button a plain circle, pressed or not', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        const btn = out.match(/#composer-bar m3e-icon-button \{[^}]*\}/)![0]
+        expect(btn).toContain('--m3e-icon-button-shape-round: 999px')
+        expect(btn).toContain('--m3e-icon-button-shape-square: 999px')
+        expect(btn).toContain('--m3e-icon-button-shape-pressed-morph: 999px')
+        // The pressed rule reads the size-specific name FIRST, so the generic
+        // override alone leaves the Expressive morph in charge of the plate.
+        for (const size of ['extra-small', 'small', 'medium', 'large']) {
+            expect(btn).toContain(`--m3e-icon-button-${size}-shape-pressed-morph: 999px`)
+        }
+        // …and no author rule may squeeze the disc on top of that.
+        expect(out).not.toContain('#send-btn:active')
+    })
+
+    it('floats the capsule instead of sitting it in a painted tray', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The footer used to paint surface-container as a band behind the old
+        // text field; the composer carries its own opaque surface now, so the
+        // band would read as a tray. Drag-over still paints, explicitly.
+        const bar = out.match(/#input-bar \{[^}]*\}/)![0]
+        expect(bar).toContain('background: none')
+        expect(out).toMatch(/#input-bar\.dragging \{[^}]*background: var\(--md-sys-color-primary-container\)/)
+    })
+
+    it('runs the conversation on behind the composer instead of cutting it', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The wrapper spans every row of #main-col, so bubbles reach the
+        // viewport's bottom edge instead of stopping dead at the band's top.
+        const wrap = out.match(/#chat-wrap \{[^}]*\}/)![0]
+        expect(wrap).toContain('grid-column: 1')
+        expect(wrap).toContain('grid-row: 1 / -1')
+        // …and each band row is placed back over it. z-index is what decides
+        // this, since the wrapper is itself positioned. Both axes must be
+        // explicit — an automatic column reads the wrapper's row span as an
+        // occupied cell and creates an implicit column, collapsing the chat.
+        const panel = out.match(/m3e-card#status-panel \{[^}]*\}/)![0]
+        const held = out.match(/#held-bar \{[^}]*\}/)![0]
+        const bar = out.match(/#input-bar \{[^}]*\}/)![0]
+        const rows: Array<[string, number]> = [[panel, 2], [held, 3], [bar, 4]]
+        for (const [rule, row] of rows) {
+            expect(rule).toContain('grid-column: 1')
+            expect(rule).toContain(`grid-row: ${row}`)
+            expect(rule).toContain('position: relative')
+            expect(rule).toContain('z-index: 40')
+        }
+        // Placement lives in CSS now, not on a stray inline style.
+        // By id, not the whole tag: it carries the drag-hint attributes now.
+        expect(out).toMatch(/<footer id="input-bar"[^>]*>/)
+        // The last bubble still rests clear of the band, by its measured height.
+        const log = out.match(/#chat-log \{[^}]*\}/)![0]
+        expect(log).toContain('padding-bottom: calc(var(--_composer-h) + var(--_fade-h) + 0.75rem)')
+    })
+
+    it('dissolves the chat into the band with alpha, not a painted cover', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // A mask ramps the content's own alpha to zero, so what shows through is
+        // the surface the bubbles already sit on: no second layer, no theme
+        // dependency, and nothing opaque laid over the conversation.
+        const log = out.match(/#chat-log \{[^}]*\}/)![0]
+        expect(log).toContain('-webkit-mask-image: var(--_chat-fade)')
+        expect(log).toContain('mask-image: var(--_chat-fade)')
+        const fade = out.match(/--_chat-fade: linear-gradient\([\s\S]*?\);/)![0]
+        expect(fade).toContain('to bottom')
+        // The ramp leads in above the band: the capsule is opaque and covers
+        // most of it, so a fade that started at the band's top edge would only
+        // ever thin the conversation behind paint.
+        expect(fade).toContain('#000 calc(100% - var(--_composer-h) - var(--_fade-h))')
+        expect(fade).toContain('transparent 100%')
+        expect(out).toContain('--_fade-h: 1.5rem;')
+        // The band may not start painting a background to do the same job.
+        expect(out.match(/#input-bar \{[^}]*\}/)![0]).toContain('background: none')
+    })
+
+    it('measures the band so the thumb and the fab stop above it', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // A token with a floor, republished whenever any of the three rows
+        // changes size — the field grows, the tray and the panel come and go.
+        expect(out).toContain('--_composer-h: 100px;')
+        expect(out).toContain("setProperty('--_composer-h', h + 'px')")
+        expect(out).toMatch(/bandEls\.forEach\(\(el\) => bandObserver\.observe\(el\)\)/)
+        // The chat's thumb travels a different distance at each end now, so the
+        // symmetric inset is gone from both the paint and the drag math.
+        expect(out).toContain('const track = () => scroller.clientHeight - inset - bottomGap();')
+        expect(out).not.toContain('inset * 2')
+        const attach = out.match(/const chatScroll = attachScrollbar\([\s\S]*?\n {4}\}\)/)![0]
+        expect(attach).toContain('bottomInset: () => bandHeight() + 4')
+        // Repainted with the reserve, not just once at attach time.
+        expect(out).toMatch(/function publishBandHeight\(\) \{[\s\S]*?chatScroll\.paint\(\);/)
+        expect(out).toMatch(/m3e-fab#scroll-bottom \{[\s\S]*?bottom: calc\(var\(--_composer-h\) \+ 1rem\)/)
+    })
+
+    it('lets the composer shrink instead of running off a phone screen', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The textarea has an intrinsic 238px, and an `auto` grid track takes its
+        // base size from the widest item's min-content — so the row demanded 482px
+        // on a 390px viewport and the send button fell off the right edge.
+        const col = out.match(/#main-col \{[\s\S]*?\n\}/)![0]
+        expect(col).toContain('grid-template-columns: minmax(0, 1fr)')
+        expect(col).toContain('min-width: 0')
+        // The pill is the row's only growable child, and it must be allowed down
+        // to zero so the field gives way before the capsules.
+        const pill = out.match(/#composer-pill \{[^}]*\}/)![0]
+        expect(pill).toContain('flex: 1 1 auto')
+        expect(pill).toContain('min-width: 0')
+        // The action group must not be the thing that holds the row open.
+        const actions = out.match(/#composer-actions \{[^}]*\}/)![0]
+        expect(actions).toContain('flex: 0 0 auto')
+    })
+
+    it('gives the field the action group\u2019s width only on a narrow, typing composer', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        const sync = out.match(/function syncComposerCompact\(\) \{[\s\S]*?\n {4}\}/)![0]
+        expect(sync).toContain('!isWide()')
+        expect(sync).toContain('document.activeElement === inputEl')
+        expect(sync).toContain('!!inputEl.value')
+        // The collapse is width-driven with no animated clip (pitfall 3).
+        const rule = out.match(/#composer-bar\.compact #composer-actions \{[^}]*\}/)![0]
+        expect(rule).toContain('max-width: 0')
+        expect(rule).not.toContain('width: auto')
+        // A zero-width child still costs the row one 4px gap, so the pill's left
+        // cap would land 12px from the outer capsule instead of the concentric 8.
+        expect(rule).toContain('margin-inline-end: calc(-1 * var(--m3e-toolbar-spacing))')
+        // …and that correction must not ride the spatial spring, which overshoots
+        // it by ~1.6px and pushes the cap through the capsule's rim mid-collapse.
+        const group = out.match(/#composer-actions \{[^}]*\}/)![0]
+        expect(group).toContain('margin-inline-end 0.42s linear')
+        expect(group).not.toMatch(/margin-inline-end[^,]*spring/)
+    })
+
+    it('turns the plus glyph into a close affordance while its menu is open', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        expect(out).toMatch(/m3e-icon-button#add-btn\.open m3e-icon \{[^}]*transform: rotate\(45deg\)/)
+        expect(out).toContain("addMenu.addEventListener('toggle'")
+        expect(out).toContain("addBtn.classList.toggle('open', addMenu.isOpen)")
+        // The three rows: image picker, file picker, clear the tray.
+        const menu = out.match(/<m3e-menu id="add-menu"[\s\S]*?<\/m3e-menu>/)![0]
+        for (const kind of ['image', 'file', 'clear']) {
+            expect(menu).toContain(`data-add="${kind}"`)
+        }
+        // The image-only filter must not outlive the picker it was set for.
+        expect(out).toContain("attachInput.accept = imagesOnly ? 'image/*' : ''")
+        expect(out).toContain("attachInput.addEventListener('cancel'")
+    })
+
+    it('renders the slash typeahead as a plain segmented list that scrolls itself', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        const render = out.match(/function renderSuggestions\(\) \{[\s\S]*?\n {4}\}/)![0]
+        // The same component the notif and settings lists use: rows are plain
+        // m3e-list-item, so their metrics, per-position corners and plate are the
+        // library's own, and the description rides the supporting-text slot.
+        expect(render).toContain('<m3e-list variant="segmented">')
+        expect(render).toContain('<m3e-list-item')
+        expect(render).toContain('<span slot="supporting-text">')
+        expect(render).toContain("cmdSuggestions.innerHTML = html + '</m3e-list>'")
+        expect(out).not.toMatch(/#cmd-suggestions m3e-list-item \{[^}]*--m3e-list-item-container-shape/)
+        // One delegated handler, bound outside the render: the panel element
+        // survives every re-render, so binding inside would stack a listener per
+        // keystroke. mousedown, so a row press never moves focus out of the field.
+        expect(out).toContain("cmdSuggestions.addEventListener('mousedown'")
+        expect(out).toContain("e.target.closest('m3e-list-item')")
+        expect(render).not.toContain("addEventListener('mousedown'")
+        // Scrolling is the list's own: the card only clips at its corner radius,
+        // so no hand-drawn thumb is overlaid on it any more.
+        const card = out.match(/#cmd-suggestions \{[^}]*\}/)![0]
+        expect(card).toContain('overflow: hidden')
+        expect(card).not.toContain('overflow-y')
+        expect(card).not.toContain('max-height')
+        expect(out).not.toMatch(/attachScrollbar\(cmdSuggestions/)
+        // …and the cap is the generous one, on the scroller itself.
+        const list = out.match(/#cmd-suggestions m3e-list \{[^}]*\}/)![0]
+        expect(list).toContain('max-height: min(26rem, 55vh)')
+        expect(list).toContain('scrollbar-width: thin')
+    })
+
+    it('keeps an IME commit and a caret move out of the composer\u2019s key handling', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        expect(out).toContain('function imeComposing(e) { return e.isComposing || e.keyCode === 229; }')
+        // Both Enter paths (pick a slash command, send) are guarded.
+        expect(out).toContain("if (e.key === 'Enter' && !e.shiftKey && !imeComposing(e)) { e.preventDefault(); sendMessage(); }")
+        const keydown = out.match(/inputEl\.addEventListener\('keydown', \(e\) => \{[\s\S]*?\n {4}\}\);/)![0]
+        expect((keydown.match(/!imeComposing\(e\)/g) || []).length).toBe(2)
+        // The toolbar's roving tabindex would steal ArrowLeft/Up/Down from the
+        // caret; the pill swallows those before the slot sees them.
+        expect(out).toContain("composerPill.addEventListener('keydown'")
+        expect(out).toContain('if (e.target === inputEl) e.stopPropagation();')
     })
 
     it('pins the textarea to at least one full line so the placeholder is not clipped', () => {
@@ -254,6 +512,27 @@ describe('mduiHtml()', () => {
         // is ours. (The comment above the declaration mentions "height", so
         // strip comments before checking.)
         expect(rule.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(/(^|[^-\w])height\s*:/)
+    })
+
+    it('holds an empty field at one line even when the hint would wrap', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The autosize clone measures the placeholder while the field is empty,
+        // so a hint that wraps at a phone's 114px stood the bar 120px high. The
+        // reference pins it with maxLines = 1 on its placeholder text.
+        expect(out).toMatch(/#input:placeholder-shown \{\s*\n {4}height: 1lh !important;/)
+        // It must be scoped to the empty state: a value has to grow freely.
+        const pin = out.match(/#input:placeholder-shown \{[^}]*\}/)![0]
+        expect(pin).toContain(':placeholder-shown')
+        // The clamp only covers the empty state, and the stale number is not
+        // self-correcting: the component only grows from what the hint measured,
+        // so a one-character draft inherited the hint's three lines. Where the
+        // platform can size a control to its content, the value must drive it.
+        const fs = out.match(/@supports \(field-sizing: content\) \{[\s\S]*?\n\}/)![0]
+        expect(fs).toContain('field-sizing: content')
+        // !important again: the component writes height inline.
+        expect(fs).toContain('height: auto !important')
+        // …and the six-row ceiling the component promised still applies.
+        expect(fs).toContain('max-height: calc(6 * 1lh)')
     })
 
     it('derives nested attachment radii from the bubble so the arcs stay concentric', () => {
@@ -322,43 +601,89 @@ describe('mduiHtml()', () => {
         expect(img![0]).toContain('border-radius: inherit')
     })
 
-    it('uses bottom sheets on narrow screens and dropdowns on wide ones', () => {
+    it('reads the conversation and its model as two app-bar lines, not a picker', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
-        // Narrow is the default (the sheet's own form: bottom-anchored, with a
-        // drag handle). Wide re-anchors the same elements as dropdowns.
-        expect(out).toMatch(/@media \(min-width: 601px\)/)
-        const mq = out.match(/@media \(min-width: 601px\)\s*\{([\s\S]*?)\n\}/)
-        expect(mq).not.toBeNull()
-        const wide = mq![1]
-        // The sheet's own :host pins it to the bottom edge, so the dropdown
-        // form has to override that placement.
-        expect(wide).toContain('top: calc(var(--safe-top) + 4rem) !important')
-        expect(wide).toContain('transform: none !important')
-        expect(wide).toContain('width: 320px')
-        // Bell and gear keep their old anchors; the model pill is placed by JS
-        // because its position follows the model name's width.
-        expect(wide).toMatch(/#notif-panel \{[^}]*right: 3\.6rem/)
-        expect(wide).toMatch(/#settings-panel \{[^}]*right: 0\.5rem/)
-        // The handle is a narrow-screen affordance: it is removed by attribute
-        // (not just hidden) so it also leaves the tab order.
-        expect(out).toContain("el.toggleAttribute('handle', !wide)")
-        expect(out).toContain("window.matchMedia('(min-width: 601px)').addEventListener('change', syncSheetMode)")
+        // M3E's app-bar has no default slot: each line has to claim its own.
+        expect(out).toMatch(/<div id="app-title" slot="title"><span id="chat-title">/)
+        expect(out).toMatch(/<div id="app-subtitle" slot="subtitle">/)
+        // Both lines are informational text that must ellipsize rather than
+        // push the trailing icons off a phone.
+        for (const sel of ['#chat-title', '#status-model']) {
+            const rule = out.match(new RegExp(`${sel} \\{[^}]*\\}`))![0]
+            expect(rule).toContain('overflow: hidden')
+            expect(rule).toContain('text-overflow: ellipsis')
+            expect(rule).toContain('white-space: nowrap')
+        }
+        // The whole activation surface is gone, along with the caret that
+        // announced it. Nothing may still look one up.
+        for (const dead of ['model-picker', 'model-trigger', 'model-caret']) {
+            expect(out).not.toContain(dead)
+        }
+        expect(out).not.toContain("getElementById('model-picker')")
     })
 
-    it('anchors the wide-screen model sheet under the pill by measuring it', () => {
+    it('names the conversation with the same words the sidebar row uses', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
-        // The pill moves with the model name, so the sheet's left is computed
-        // at open time and clamped to the viewport.
-        expect(out).toContain('function anchorWideSheet(sheet, anchorEl)')
-        expect(out).toMatch(/Math\.min\(a\.left, innerWidth - w - 8\)/)
-        expect(out).toContain('anchorWideSheet(modelMenu, modelPicker)')
+        // One helper owns the fallback chain, so the bar and the drawer cannot
+        // disagree about what a session is called.
+        expect(out).toMatch(/function sessionTitle\(s\) \{\n {6}return s\.name \|\| s\.firstMessage/)
+        // Both readers go through it: the sidebar row and the bar.
+        expect(out).toContain("it.querySelector('.s-title').textContent = sessionTitle(s)")
+        expect(out).toContain("chatTitle.textContent = s ? sessionTitle(s) : 'π-task'")
+        // The bar re-derives its line from every sessions frame, so a switch or
+        // a delete lands on it without a second data path.
+        expect(out).toMatch(/case 'sessions':[\s\S]{0,200}?renderSessions\(\);\n {10}syncChatTitle\(\);/)
     })
 
-    it('turns the three app-bar panels into modal bottom sheets with drag handles', () => {
+    it('clears the bar by its measured height instead of an assumed 64px', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
-        for (const id of ['notif-panel', 'settings-panel', 'model-menu']) {
-            // The element itself is the sheet: modal + handle + an accessible
-            // handle label are the three attributes the component needs.
+        // A token with a floor, published from JS once the bar lays out.
+        expect(out).toContain('--_topbar-h: 4rem;')
+        expect(out).toMatch(/new ResizeObserver\(publishBarHeight\)\.observe\(topBar\)/)
+        expect(out).toContain("setProperty('--_topbar-h'")
+        // Every surface that hangs below it reads the token — none may keep a
+        // hardcoded 4rem and drift when the second line makes the bar taller.
+        expect(out).not.toContain('calc(var(--safe-top) + 4rem)')
+        expect(out).toContain('top: calc(var(--safe-top) + var(--_topbar-h));')
+        expect(out).toContain('padding-top: calc(var(--safe-top) + var(--_topbar-h) + 10px + 0.5rem)')
+    })
+
+    it('keeps the composer button the single model entry point', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Wide: the library trigger anchors the menu to the button's parent.
+        expect(out).toMatch(/id="model-slot"[\s\S]{0,80}<m3e-menu-trigger for="model-menu"/)
+        // Phone: the handler sits on the BUTTON, because m3e-menu-trigger stops
+        // its click before it bubbles to the wrapper — a wrapper listener would
+        // leave a phone tap doing nothing.
+        expect(out).toContain('modelBtn.addEventListener(\'click\', toggleModelPhonePanel)')
+        expect(out).not.toContain("getElementById('model-slot').addEventListener")
+        // The open state moved with the entry point.
+        expect(out).toContain("modelBtn.classList.toggle('open', open)")
+        expect(out).toMatch(/#composer-bar #model-btn\.open \{[^}]*background: color-mix/)
+        expect(out).toMatch(/#composer-bar #model-btn\.open \{[^}]*border-radius: 999px/)
+    })
+
+    it('re-asks for the session list while the conversation is still unsaved', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // pi writes the session file on the first assistant message, so the
+        // title only becomes derivable at agent_end — and only asks again while
+        // the current row is still the synthesized one.
+        const body = out.slice(out.indexOf("case 'agent_end':"), out.indexOf("case 'context':"))
+        expect(body).toContain("type: 'list_sessions'")
+        expect(body).toMatch(/\(!cur \|\| cur\.unsaved\)/)
+    })
+
+    it('gives each app-bar panel two hosts: a dropdown and a bottom sheet', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Wide screens keep the app's original dropdowns, byte for byte.
+        expect(out).toContain('<div id="notif-panel" aria-hidden="true">')
+        expect(out).toContain('<div id="settings-panel" aria-hidden="true">')
+        // Matched by id + attribute, not by the whole tag: the tag also
+        // carries data-i18n-aria now, so a literal `>` would not follow the
+        // aria-label any more.
+        expect(out).toMatch(/<m3e-menu id="model-menu"[^>]*aria-label="切换模型"/)
+        // Phones get the sheet form of the same three panels.
+        for (const id of ['notif-sheet', 'settings-sheet', 'model-sheet']) {
             const m = out.match(new RegExp(`<m3e-bottom-sheet id="${id}"([^>]*)>`))
             expect(m).not.toBeNull()
             expect(m![1]).toContain('modal')
@@ -367,20 +692,193 @@ describe('mduiHtml()', () => {
         }
         // The command suggestions are NOT among them: a typeahead must stay
         // anchored to the field it completes.
-        expect(out).not.toContain('<m3e-bottom-sheet id="cmd-suggestions"')
+        expect(out).not.toContain('id="cmd-suggestions-sheet"')
     })
 
-    it('opens the panels through the sheet API rather than a CSS class', () => {
+    it('keeps the wide-screen dropdown chrome, its corner concentric with the rows', () => {
         const out = mduiHtml('ws://localhost:7600/ws')
-        // No leftover .open toggling for these three panels.
-        expect(out).not.toContain("notifPanel.classList.toggle('open'")
-        expect(out).not.toContain("settingsPanel.classList.toggle('open'")
-        // The model pill is a plain button now, and the sheets are shown/hidden
-        // by their own API.
-        expect(out).toContain('id="model-trigger"')
-        expect(out).toMatch(/notifPanel\.show\(\)/)
-        expect(out).toMatch(/settingsPanel\.show\(\)/)
-        expect(out).toMatch(/modelMenu\.show\(\)/)
+        // The dropdown rules apply at every width; the narrow block hides them.
+        for (const id of ['notif-panel', 'settings-panel']) {
+            const m = out.match(new RegExp(`#${id} \\{[^}]*\\}`))
+            expect(m).not.toBeNull()
+            expect(m![0]).toContain('position: fixed')
+            // Concentric, not a fixed shape token: the card wraps segmented rows
+            // whose own group corner is 16px, and they sit --_gap from the card
+            // edge, so the card arc is the two added. --_gap also IS the padding,
+            // so the sum cannot drift if either number changes.
+            expect(m![0]).toContain('--_row-r: var(--md-sys-shape-corner-large)')
+            expect(m![0]).toContain('border-radius: calc(var(--_row-r) + var(--_gap))')
+            expect(m![0]).toContain('padding: var(--_gap)')
+            expect(m![0]).not.toContain('border-radius: var(--md-sys-shape-corner-extra-large)')
+            expect(m![0]).toContain('box-shadow: 0 4px 8px 3px rgba(0,0,0,.3)')
+            expect(m![0]).toContain('display: none')
+        }
+        expect(out).toContain('#notif-panel.open { display: flex; }')
+        expect(out).toContain('#settings-panel.open { display: flex; }')
+        // Anchors unchanged from the original.
+        expect(out).toMatch(/#notif-panel \{[^}]*right: 3\.6rem/)
+        expect(out).toMatch(/#settings-panel \{[^}]*right: 0\.5rem/)
+        // The model list is the library menu with its own trigger.
+        expect(out).toContain('<m3e-menu-trigger for="model-menu"')
+        expect(out).toMatch(/#model-menu \{[^}]*--m3e-menu-container-max-height: 55vh/)
+    })
+
+    it('switches form at the breakpoint and hides the other host outright', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Grab the whole block (up to the closing brace at column 0).
+        const mq = out.match(/@media \(max-width: 600px\) \{([\s\S]*?)\n\}/)
+        expect(mq).not.toBeNull()
+        // display:none, not off-screen: a position:fixed card would otherwise
+        // keep a hit area behind the sheet's scrim.
+        expect(mq![1].replace(/\s+/g, ' ')).toContain(
+            '#notif-panel, #settings-panel, #model-menu { display: none !important; }'
+        )
+        // ...and the sheets are styled in the same block.
+        expect(mq![1]).toContain('--m3e-bottom-sheet-container-color')
+        // The sheets follow the same breakpoint, live, not just at load.
+        expect(out).toContain("window.matchMedia(WIDE).addEventListener('change', applyForm)")
+        // One breakpoint constant for the CSS, the JS and the listener.
+        expect(out).toContain("const WIDE = '(min-width: 601px)'")
+        // One seam for both forms.
+        expect(out).toContain('const hostOf = name =>')
+        expect(out).toContain('function openPanel(name, open)')
+    })
+
+    it('shares one settings panel between the two hosts instead of duplicating it', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The content lives once, in a template, and is cloned into the active
+        // host only.
+        expect(out).toContain('<template id="settings-content">')
+        expect(out).toContain('function moveSettingsContent()')
+        // The host it leaves must be emptied: a second copy would duplicate
+        // every id in it, and getElementById resolves to the detached one.
+        expect(out).toMatch(/const other = target === settingsPanel \? settingsSheet : settingsPanel;\s*\n\s*if \(other\) other\.innerHTML = ''/)
+        // Every reference into it is resolved through the live host, so cloning
+        // cannot leave a captured element pointing at a detached copy.
+        expect(out).toContain('const settingsHost = () =>')
+        expect(out).toContain('const applyThemeSelection = (val) =>')
+        expect(out).toContain('const thinkingCollapseNow = () =>')
+        // And the labels show live state, so they are re-stamped on each mount.
+        expect(out).toContain('syncSettingsLabels();')
+        // Interaction is delegated on the document for the same reason.
+        expect(out).toContain("document.addEventListener('change'")
+    })
+
+    it('renders the app-bar panels as segmented lists', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        for (const id of ['notif-list', 'notif-sheet-list', 'settings-list']) {
+            expect(out).toContain(`<m3e-list id="${id}" variant="segmented">`)
+        }
+        // The model list is the action-list flavour: its rows are choices, so
+        // they need the button-like item and roving tab index.
+        expect(out).toContain('<m3e-action-list id="model-sheet-list" variant="segmented">')
+        // Notification rows use the slots the component defines. `start` and
+        // `headline` are mdui's names: unrecognised slots fall through to the
+        // default one, which rendered the icon inline with the text.
+        expect(out).toContain('<m3e-icon slot="leading" name="')
+        expect(out).not.toContain('slot="headline"')
+    })
+
+    it('renders the session sidebar as a segmented single-select list', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        expect(out).toContain('<m3e-selection-list id="session-list" variant="segmented"')
+        // The component shows a selection radio by default, and hiding it is also
+        // what makes the trailing slot render at all: without this attribute the
+        // per-row trash is display:none.
+        expect(out).toContain('hide-selection-indicator')
+        expect(out).not.toContain('m3e-nav-menu')
+        expect(out).not.toContain('s-label')
+        expect(out).toContain("document.createElement('m3e-list-option')")
+        expect(out).toContain("ic.slot = 'leading'")
+        expect(out).toContain("sub.slot = 'supporting-text'")
+        expect(out).toContain("del.slot = 'trailing'")
+        // The option writes its own `selected` property when it is clicked, so an
+        // attribute-only sync could leave a stale property behind.
+        expect(out).toContain('it.selected = !!cur;')
+        expect(out).toContain("it.toggleAttribute('selected', !!cur);")
+        // Titles are one line, ellipsised — never a wrapped block that makes rows
+        // a ragged height. Not a nowrap + text-overflow rule either: the option's
+        // text column is a flex item with an automatic minimum size, so one
+        // unbreakable nowrap line stretches the column instead of clipping.
+        const titleRule = out.match(/#session-list \.s-title \{([^}]*)\}/)![1]
+        expect(titleRule).toContain('-webkit-line-clamp: 1')
+        expect(titleRule).toContain('overflow: hidden')
+        // Without containment the long title widens div.content (shadow, min-width
+        // auto) and every row's trash lands on a different x.
+        expect(titleRule).toContain('contain: inline-size')
+        expect(titleRule).not.toContain('white-space: nowrap')
+        expect(titleRule).not.toContain('line-clamp: 2')
+    })
+
+    it('registers every icon name the client asks for', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // An unregistered name is not a missing glyph: m3e-icon falls back to
+        // painting the ligature TEXT, so the row shows the word "info".
+        const registered = new Set(
+            [...out.matchAll(/([a-z][a-z0-9_]*)\s*:\s*\['[Mm\d]/g)].map((m) => m[1])
+        )
+        const used = new Set(
+            [...out.matchAll(/<m3e-icon\b[^>]*\bname="([a-z0-9_]+)"/g)].map((m) => m[1])
+        )
+        const levels = out.match(/const LEVEL_ICON = \{([^}]*)\}/)
+        expect(levels).not.toBeNull()
+        for (const m of levels![1].matchAll(/:\s*'([a-z0-9_]+)'/g)) used.add(m[1])
+        expect(used.size).toBeGreaterThan(10)
+        expect([...used].filter((n) => !registered.has(n))).toEqual([])
+    })
+
+    it('drives theme mode and accent colour from menus of radio items', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        expect(out).toContain('<m3e-menu id="theme-menu"')
+        expect(out).toContain('<m3e-menu id="accent-menu"')
+        // The label text is wrapped in a span and tagged for the locale
+        // sweep, so these are matched on structure rather than verbatim.
+        expect(out).toMatch(/<m3e-menu-item-radio data-value="dark"[^>]*>[\s\S]*?深色/)
+        expect(out).toMatch(/<m3e-menu-item-radio data-accent="#1E88E5"[^>]*data-name="蓝色"/)
+        // Opened from the row through the library's own trigger.
+        expect(out).toContain('<m3e-menu-trigger for="theme-menu">')
+        expect(out).toContain('<m3e-menu-trigger for="accent-menu">')
+        // The menus live OUTSIDE the settings template: a menu is fixed chrome
+        // and a bottom sheet would clip it.
+        const tpl = out.slice(out.indexOf('<template id="settings-content">'), out.indexOf('</template>'))
+        expect(tpl).not.toContain('<m3e-menu ')
+        expect(tpl).toContain('<m3e-menu-trigger for="theme-menu">')
+        // State goes through the observed attribute, not a property, so it is
+        // safe before the lazily loaded module has upgraded the element.
+        expect(out).toContain("it.toggleAttribute('checked', ")
+        // A click inside those menus is a click on a control the panel opened,
+        // not an outside click that would close it mid-choice.
+        expect(out).toContain("e.target.closest('m3e-menu')")
+    })
+
+    it('gives every switch both icons', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        const switches = out.match(/<m3e-switch\b[^>]*>/g) || []
+        expect(switches.length).toBe(3)
+        for (const el of switches) expect(el).toContain('icons="both"')
+    })
+
+    it('sends set_model from either model-picker form', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // The wide form's radio items were dead clicks: the only activation
+        // path matched the sheet's rows.
+        expect(out).toContain("modelMenu.addEventListener('click'")
+        expect(out).toContain("e.target.closest('m3e-menu-item-radio')")
+        expect(out).toContain('function pickModel(spec)')
+        // The sheet's rows are action-list items, still matched by .model-row.
+        expect(out).toContain('<m3e-list-action class="model-row')
+        // Closing the wide form goes through the menu's own API: an .open class
+        // is one the component never reads.
+        expect(out).toMatch(/host === modelMenu[\s\S]{0,300}?host\.hideAll\(true\)/)
+    })
+
+    it('keeps the hidden host of each panel in step with the visible one', () => {
+        const out = mduiHtml('ws://localhost:7600/ws')
+        // Crossing the breakpoint must not reveal a stale list or toggle.
+        expect(out).toMatch(/for \(const el of \[notifList, notifSheetList\]\) if \(el\)/)
+        expect(out).toMatch(/for \(const el of \[notifToggle, notifSheetToggle\]\)/)
+        // Both model forms are rendered on every catalogue frame.
+        expect(out).toContain('if (modelSheetList) modelSheetList.innerHTML = sheetHtml')
     })
 
     it('derives the detent ladder after the sheet upgrades', () => {
@@ -395,16 +893,6 @@ describe('mduiHtml()', () => {
         expect(m![1]).toContain("'fit'")
         expect(m![1]).toContain("'half'")
         expect(m![1]).toContain("'full'")
-    })
-
-    it('syncs the sheet state flags from lifecycle events, not click-outside', () => {
-        const out = mduiHtml('ws://localhost:7600/ws')
-        // A modal sheet is dismissed by its scrim, its drag handle or Escape —
-        // none of which reach the buttons, so the flags follow the events.
-        expect(out).toContain("notifPanel.addEventListener('closed'")
-        expect(out).toContain("settingsPanel.addEventListener('closed'")
-        // The old document click-outside handler is gone.
-        expect(out).not.toContain('notifPanel.contains(e.target)')
     })
 
     it('removes the form-field subscript row instead of leaving dead space', () => {
