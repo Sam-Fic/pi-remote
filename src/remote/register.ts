@@ -1,4 +1,6 @@
 import type {ExtensionAPI, ExtensionCommandContext} from '@earendil-works/pi-coding-agent'
+import {SessionManager} from '@earendil-works/pi-coding-agent'
+import {readFileSync} from 'node:fs'
 import {getConfig} from '../config/config.js'
 import {
     getBridge,
@@ -17,6 +19,10 @@ import {
 } from './bridge.js'
 import {setupEvents} from './events.js'
 import {seedFromSession} from './backfill.js'
+import type {BackfillEntry} from './backfill.js'
+import {buildHistoryPage, parseSessionEntries} from './history-paging.js'
+import {loadOrCreateToken, withTokenQuery, NO_AUTH_ENV} from './auth.js'
+import type {RemoteAuth} from './auth.js'
 import {deleteSessionFile, listSessionSummaries, withCurrentSession} from './sessions.js'
 import {reset, addUserTurn, setHeld, getState, addSystemNote} from './session-state.js'
 import {mduiHtml as html} from './ui-mdui.js'
@@ -83,6 +89,16 @@ if (!_g.__piRemote)
     }
 
 const S = _g.__piRemote!
+
+/** The machine's auth policy: token-gated unless PI_REMOTE_NO_AUTH=1 restores
+ *  the historical open access. The token is generated once and persisted
+ *  (auth.ts), so a restart hands out the same token and configured clients —
+ *  a phone app, a pinned browser URL — keep working. */
+function remoteAuthPolicy(): RemoteAuth {
+    return process.env[NO_AUTH_ENV]?.trim() ?
+            {mode: 'off'}
+        :   {mode: 'token', token: loadOrCreateToken()}
+}
 
 /**
  * Where a plain (non-slash) browser line goes. Exported so
@@ -212,6 +228,51 @@ export function registerRemote(pi: ExtensionAPI): void {
             current: S.sessionPath,
             sessions: withCurrentSession(sessions, S.sessionPath)
         }
+    }
+
+    /**
+     * One page of pre-window history (client scrolled to the top).
+     *
+     * The ACTIVE session is read from the live entries — its file may lag
+     * memory by the current run. Any other path must survive the same
+     * allow-list deleteSessionFile uses: a WS client can send any string, and
+     * "readable session file" must mean "a file SessionManager.list returned",
+     * not "any JSONL on this machine".
+     */
+    async function fetchHistoryPage(
+        reqPath: string | undefined,
+        before: string | undefined,
+        limit: number | undefined
+    ): Promise<import('./protocol.js').HistoryPageMessage | null> {
+        let entries: BackfillEntry[] | null = null
+        if (!reqPath || reqPath === S.sessionPath) {
+            const raw = getBridge().currentCtx?.sessionManager?.getEntries?.() as unknown
+            if (Array.isArray(raw)) entries = raw as BackfillEntry[]
+        } else {
+            if (!S.cwd) return null
+            let known = false
+            try {
+                const infos = await SessionManager.list(S.cwd)
+                known = infos.some(i => i.path === reqPath)
+            } catch {
+                known = false
+            }
+            if (!known) {
+                publishNotify('历史分页：未知会话', 'warning')
+                return null
+            }
+            try {
+                entries = parseSessionEntries(readFileSync(reqPath, 'utf8'))
+            } catch {
+                publishNotify('历史分页：会话文件不可读', 'error')
+                return null
+            }
+        }
+        if (!entries) {
+            publishNotify('历史分页：当前会话不可用', 'warning')
+            return null
+        }
+        return buildHistoryPage(entries, before, limit)
     }
 
     async function ensureServer(): Promise<ServerHandle> {
@@ -372,7 +433,13 @@ export function registerRemote(pi: ExtensionAPI): void {
                             .catch(() => {})
                     })
                     .catch(err => publishNotify(`删除会话失败: ${(err as Error).message}`, 'error'))
-            }
+            },
+            // Scroll-to-top paging: rebuild turns from the persisted (or live)
+            // session and slice a page older than the 20-turn window.
+            fetchHistoryPage,
+            // Token gate. Read per startServer call: the env flag is a startup
+            // decision, and the persisted token survives reloads.
+            remoteAuthPolicy()
         )
         // Hands-off HTTPS: point Tailscale serve at our port so phones get a
         // secure context. Best-effort — any failure degrades to the http URL.
@@ -405,8 +472,13 @@ export function registerRemote(pi: ExtensionAPI): void {
                         S.qrOverlayShown = true
                         const url = `http://${server.ip}:${server.port}`
                         S.remoteUrl = url
-                        ctx.ui.setStatus('remote', url)
-                        notifyBoth(ctx, `Remote running at ${url}`, 'info')
+                        const auth = remoteAuthPolicy()
+                        const suffix = auth.mode === 'token' ? ` (token ${auth.token})` : ''
+                        ctx.ui.setStatus(
+                            'remote',
+                            auth.mode === 'token' ? withTokenQuery(url, auth.token) : url
+                        )
+                        notifyBoth(ctx, `Remote running at ${url}${suffix}`, 'info')
                     }
                 })
                 .catch(err =>
@@ -479,9 +551,19 @@ export function registerRemote(pi: ExtensionAPI): void {
                 const server = await ensureServer()
                 const url = `http://${server.ip}:${server.port}`
                 S.remoteUrl = url
-                ctx.ui.setStatus('remote', url)
-                await showRemoteQrOverlay(ctx, server, S.serveResult ?? {state: 'unavailable'})
-                notifyBoth(ctx, `Remote running at ${url}`, 'info')
+                const auth = remoteAuthPolicy()
+                ctx.ui.setStatus(
+                    'remote',
+                    auth.mode === 'token' ? withTokenQuery(url, auth.token) : url
+                )
+                await showRemoteQrOverlay(ctx, server, S.serveResult ?? {state: 'unavailable'}, auth)
+                notifyBoth(
+                    ctx,
+                    auth.mode === 'token' ?
+                        `Remote running at ${url} (token ${auth.token})`
+                    :   `Remote running at ${url}`,
+                    'info'
+                )
             } catch (err) {
                 notifyBoth(ctx, `Remote UI unavailable: ${(err as Error).message}`, 'error')
             }
@@ -492,18 +574,25 @@ export function registerRemote(pi: ExtensionAPI): void {
 async function showRemoteQrOverlay(
     ctx: Pick<ExtensionCommandContext, 'ui' | 'mode'>,
     server: ServerHandle,
-    result: ServeResult
+    result: ServeResult,
+    auth: RemoteAuth
 ): Promise<void> {
     const httpPrimary = `http://${server.ip}:${server.port}`
     const plan = planRemoteUrls(httpPrimary, result, server.port)
-    const primaryUrl = plan.primaryUrl
-    const qr = await qrLines(primaryUrl)
+    // The QR encodes the AUTHENTICATED URL: one scan opens the page with the
+    // token in its query, and the page derives its WS/upload tokens from there.
+    const qrTarget =
+        auth.mode === 'token' ? withTokenQuery(plan.primaryUrl, auth.token) : plan.primaryUrl
+    const qr = await qrLines(qrTarget)
 
     const tsHost = hostFromResult(result)
     const addrs = [...plan.urlLines, ...formatAddresses(server.ips, server.port, tsHost)]
     const labelW = addrs.reduce((m, a) => Math.max(m, a.label.length), 0)
     const addrLines = [
         ...addrs.map(a => (a.label ? `${a.label.padEnd(labelW)}  ${a.url}` : a.url)),
+        // The bare token gets its own line: a client that configures host and
+        // token separately (the phone app) reads it straight off the terminal.
+        ...(auth.mode === 'token' ? [`Token         ${auth.token}`] : []),
         ...plan.hintLines
     ]
     const addrWidth = addrLines.reduce((m, l) => Math.max(m, l.length), 0)

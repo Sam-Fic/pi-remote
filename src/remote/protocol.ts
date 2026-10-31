@@ -127,6 +127,17 @@ export interface ResetMessage {
     type: 'reset'
 }
 
+/** One page of turns OLDER than the live 20-turn window, answering a
+ *  ClientFetchHistory. `turns` is oldest→newest (the client prepends them above
+ *  what it already has); `before` is the cursor for the next page back and is
+ *  absent when the beginning of the session is reached (`hasMore` false). */
+export interface HistoryPageMessage {
+    type: 'history_page'
+    turns: import('./history.js').Turn[]
+    before?: string
+    hasMore: boolean
+}
+
 /** The full authoritative state sent to a (re)connecting client. Defined in
  *  session-state.ts (its serializer); re-exported here as part of the wire type. */
 export type {SnapshotMessage} from './session-state.js'
@@ -151,6 +162,7 @@ export type ServerMessage =
     | HeldMessage
     | ContextMessage
     | ResetMessage
+    | HistoryPageMessage
     | ModelsMessage
     | SessionsMessage
     | import('./session-state.js').SnapshotMessage
@@ -211,6 +223,16 @@ export interface ClientDeleteSession {
     type: 'delete_session'
     path: string
 }
+/** Request a page of history older than the live window (client scrolled to
+ *  the top). `path` selects which session to read — absent means the active
+ *  one; `before` is the cursor from the previous history_page (absent = from
+ *  the newest); `limit` is clamped server-side. */
+export interface ClientFetchHistory {
+    type: 'fetch_history'
+    path?: string
+    before?: string
+    limit?: number
+}
 export type ClientMessage =
     | ClientChatMessage
     | ClientPromptAnswer
@@ -220,6 +242,7 @@ export type ClientMessage =
     | ClientListSessions
     | ClientSwitchSession
     | ClientDeleteSession
+    | ClientFetchHistory
 
 export function isClientMessage(x: unknown): x is ClientMessage {
     if (typeof x !== 'object' || x === null) return false
@@ -242,5 +265,12 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     if (m.type === 'list_sessions') return true
     if (m.type === 'switch_session') return typeof m.path === 'string' && m.path.length > 0
     if (m.type === 'delete_session') return typeof m.path === 'string' && m.path.length > 0
+    if (m.type === 'fetch_history') {
+        return (
+            (m.path === undefined || (typeof m.path === 'string' && m.path.length > 0)) &&
+            (m.before === undefined || typeof m.before === 'string') &&
+            (m.limit === undefined || (typeof m.limit === 'number' && Number.isFinite(m.limit)))
+        )
+    }
     return false
 }

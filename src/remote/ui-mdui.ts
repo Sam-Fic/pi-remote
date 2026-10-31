@@ -2238,8 +2238,20 @@ function stage0Logic(wsUrl: string): string {
     // ───────────── Constants & DOM ─────────────
     const WS_URL_PLACEHOLDER = ${JSON.stringify(wsUrl)};
     const FALLBACK_WS_URL = WS_URL_PLACEHOLDER;
+    /* The page token: GET / redirected here with ?token=… (or the QR URL
+       carried it), so the authenticated page already holds it. Every request
+       this script makes — WS, upload, push — appends it; with auth disabled
+       the query is absent and all of them stay bare. */
+    const PAGE_TOKEN = (() => {
+      try { return new URLSearchParams(location.search).get('token') || ''; }
+      catch (_) { return ''; }
+    })();
+    const withPageToken = (u) => PAGE_TOKEN
+      ? u + (u.indexOf('?') === -1 ? '?' : '&') + 'token=' + encodeURIComponent(PAGE_TOKEN)
+      : u;
     const WS_URL_RESOLVED = (location && location.host)
       ? (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws'
+        + (PAGE_TOKEN ? '?token=' + encodeURIComponent(PAGE_TOKEN) : '')
       : FALLBACK_WS_URL;
 
     const chatLog      = document.getElementById('chat-log');
@@ -3138,7 +3150,7 @@ function stage0Logic(wsUrl: string): string {
       box.className = 'bubble-attachments';
       for (const a of list) {
         const link = document.createElement('a');
-        link.href = a.url;
+        link.href = withPageToken(a.url);
         link.target = '_blank';
         link.rel = 'noopener';
         link.title = a.name;
@@ -3147,7 +3159,7 @@ function stage0Logic(wsUrl: string): string {
           // radius is derived from (see .image-card / img in the stylesheet).
           link.classList.add('image-card');
           const img = document.createElement('img');
-          img.src = a.url;
+          img.src = withPageToken(a.url);
           img.alt = a.name;
           img.loading = 'lazy';
           link.appendChild(img);
@@ -3639,7 +3651,7 @@ function stage0Logic(wsUrl: string): string {
     function subscribePush() {
       return navigator.serviceWorker.register('/sw.js')
         .then(() => navigator.serviceWorker.ready)
-        .then((reg) => fetch('/push-key').then((r) => r.text()).then((key) =>
+        .then((reg) => fetch(withPageToken('/push-key')).then((r) => r.text()).then((key) =>
           reg.pushManager.getSubscription().then((existing) =>
             existing || reg.pushManager.subscribe({
               userVisibleOnly: true,
@@ -3647,7 +3659,7 @@ function stage0Logic(wsUrl: string): string {
             })
           )
         ))
-        .then((sub) => fetch('/subscribe', {
+        .then((sub) => fetch(withPageToken('/subscribe'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(sub)
@@ -4051,7 +4063,7 @@ function stage0Logic(wsUrl: string): string {
           + (a.pending ? ' uploading' : '');
         if (a.kind === 'image' && !a.pending) {
           const img = document.createElement('img');
-          img.src = a.url;
+          img.src = withPageToken(a.url);
           img.alt = a.name;
           chip.appendChild(img);
         } else {
@@ -4107,8 +4119,8 @@ function stage0Logic(wsUrl: string): string {
         };
         pendingAttachments.push(local);
         renderAttachments();
-        fetch('/upload?name=' + encodeURIComponent(file.name)
-              + '&type=' + encodeURIComponent(file.type || ''), {
+        fetch(withPageToken('/upload?name=' + encodeURIComponent(file.name)
+              + '&type=' + encodeURIComponent(file.type || '')), {
           method: 'POST',
           headers: { 'Content-Type': 'application/octet-stream' },
           body: file

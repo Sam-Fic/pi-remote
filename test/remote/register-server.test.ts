@@ -176,6 +176,7 @@ const remoteGlobal = (): {
     ).__piRemote!
 
 let savedRemoteFlag: boolean
+let savedNoAuth: string | undefined
 
 beforeEach(() => {
     started.length = 0
@@ -194,12 +195,20 @@ beforeEach(() => {
     b.commands.clear()
     b.currentCtx = null
     savedRemoteFlag = getConfig().remote
+    // These tests exercise the WIRING (which callback goes where, what the user
+    // is told), not auth. Pin auth off so the announced URLs stay token-less and
+    // remoteAuthPolicy never generates/writes a token in the real data-home.
+    // Dedicated token behaviour lives in auth.test.ts.
+    savedNoAuth = process.env.PI_REMOTE_NO_AUTH
+    process.env.PI_REMOTE_NO_AUTH = '1'
 })
 afterEach(() => {
     getConfig().remote = savedRemoteFlag
     remoteGlobal().server = null
     remoteGlobal().serveResult = null
     getBridge().currentCtx = null
+    if (savedNoAuth === undefined) delete process.env.PI_REMOTE_NO_AUTH
+    else process.env.PI_REMOTE_NO_AUTH = savedNoAuth
 })
 
 const runRemote = async (args: string, ctx: unknown): Promise<void> => {

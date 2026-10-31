@@ -11,6 +11,9 @@ import {handleServeUpload, handleUploadRequest, resolveUploads} from './uploads.
 import type {AttachmentInfo} from './protocol.js'
 import {publicKey, addSubscription, getSubscriptions, logPush} from './push.js'
 import type {PushSubscriptionJSON} from './push.js'
+import {tokenMatches, tokenFromUrl, withTokenQuery} from './auth.js'
+import type {RemoteAuth} from './auth.js'
+import type {HistoryPageMessage} from './protocol.js'
 
 export interface LocalIPs {
     /** Tailscale (tailscale0) IPv4 address, if the interface is up. */
@@ -152,10 +155,23 @@ export async function startServer(
     /** Delete a persisted session (browser sidebar trash). The callback owns
      *  every check (current-session guard, scan allow-list) and every
      *  consequence (file removal, list refresh, user-facing notice). */
-    onDeleteSession?: (path: string) => void
+    onDeleteSession?: (path: string) => void,
+    /** Serve one page of pre-window history (client scrolled to the top). The
+     *  callback reads the session (live entries or file) and returns the frame;
+     *  null answers with a notify instead. May be async (file reads). */
+    onFetchHistory?: (
+        path: string | undefined,
+        before: string | undefined,
+        limit: number | undefined
+    ) => HistoryPageMessage | null | Promise<HistoryPageMessage | null>,
+    /** Who must present a token. Defaults to off so existing callers and the
+     *  test suite keep their open-access behaviour; register.ts passes the
+     *  machine token unless PI_REMOTE_NO_AUTH=1. */
+    auth?: RemoteAuth
 ): Promise<ServerHandle> {
     const ips = getLocalIPs()
     const ip = ips.primary
+    const authPolicy: RemoteAuth = auth ?? {mode: 'off'}
     // The bound port isn't known until listenWithRetry succeeds, and wsUrl
     // depends on it. The request handler only ever runs once the server is
     // listening (real client I/O, long after we set wsUrl below), so reading it
@@ -163,23 +179,63 @@ export async function startServer(
     let wsUrl = ''
 
     const httpServer = createServer((req, res) => {
-        if (req.method === 'GET' && (req.url === '/' || req.url === '')) {
-            const body = getHtml(wsUrl)
+        const authorized = (rawUrl: string | undefined): boolean =>
+            tokenMatches(authPolicy, tokenFromUrl(rawUrl))
+        if (req.method === 'GET' && (req.url === '/' || req.url === '' || req.url?.startsWith('/?'))) {
+            // The page itself stays reachable, but under token auth a visit
+            // without the token redirects to the authenticated URL — from
+            // there the script derives its WS token and every fetch token from
+            // location.search, so the browser never has to be told separately.
+            if (!authorized(req.url)) {
+                // Unreachable when mode is 'off' (tokenMatches accepts
+                // everything), so the empty-string fallback never ships.
+                const token = authPolicy.mode === 'token' ? authPolicy.token : ''
+                res.writeHead(302, {Location: withTokenQuery('/', token)})
+                res.end()
+                return
+            }
+            const body = getHtml(
+                authPolicy.mode === 'token' ?
+                    withTokenQuery(wsUrl, authPolicy.token)
+                :   wsUrl
+            )
             res.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'})
             res.end(body)
         } else if (req.method === 'GET' && req.url === '/sw.js') {
             res.writeHead(200, {'Content-Type': 'text/javascript; charset=utf-8'})
             res.end(swJs())
-        } else if (req.method === 'GET' && req.url === '/push-key') {
+        } else if (req.method === 'GET' && req.url?.startsWith('/push-key')) {
+            if (!authorized(req.url)) {
+                res.writeHead(401)
+                res.end('unauthorized')
+                return
+            }
             res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'})
             res.end(publicKey())
         } else if (req.method === 'GET' && req.url?.startsWith('/uploads/')) {
+            if (!authorized(req.url)) {
+                res.writeHead(401)
+                res.end('unauthorized')
+                return
+            }
             // Files the composer uploaded. Immutable + id-addressed, so the
             // browser can cache a thumbnail for the life of the page.
             handleServeUpload(res, req.url.slice('/uploads/'.length).split('?')[0]!)
         } else if (req.method === 'POST' && req.url?.startsWith('/upload')) {
+            if (!authorized(req.url)) {
+                req.resume()
+                res.writeHead(401)
+                res.end('unauthorized')
+                return
+            }
             handleUploadRequest(req, res)
-        } else if (req.method === 'POST' && req.url === '/subscribe') {
+        } else if (req.method === 'POST' && req.url?.startsWith('/subscribe')) {
+            if (!authorized(req.url)) {
+                req.resume()
+                res.writeHead(401)
+                res.end('unauthorized')
+                return
+            }
             const chunks: Buffer[] = []
             req.on('data', c => chunks.push(c as Buffer))
             req.on('end', () => {
@@ -232,7 +288,26 @@ export async function startServer(
     // EADDRINUSE on the first port would be forwarded to wss and thrown as an
     // uncaughtException, crashing pi even though listenWithRetry handled it. ws
     // works fine on an already-listening server.
-    const wss = new WebSocketServer({server: httpServer, path: '/ws'})
+    //
+    // The token gate rides on ws's own verifyClient hook rather than a separate
+    // 'upgrade' listener: verifyClient runs INSIDE ws's handshake, so a rejection
+    // makes ws answer `401` and destroy the socket with no second listener racing
+    // to complete the upgrade. A rejected client never reaches 'connection', so it
+    // never triggers onFirstConnect or receives a snapshot. In 'off' mode every
+    // client is accepted, preserving the historical open behaviour.
+    const wss = new WebSocketServer({
+        server: httpServer,
+        path: '/ws',
+        verifyClient: (info, accept) => {
+            if (authPolicy.mode === 'off') {
+                accept(true)
+                return
+            }
+            const url = info.req.url ?? ''
+            if (tokenMatches(authPolicy, tokenFromUrl(url))) accept(true)
+            else accept(false, 401, 'Unauthorized')
+        }
+    })
 
     const handle: ServerHandle = {
         port,
@@ -315,6 +390,26 @@ export async function startServer(
                 }
                 if (msg.type === 'delete_session') {
                     onDeleteSession?.(msg.path)
+                    return
+                }
+                if (msg.type === 'fetch_history') {
+                    // Scroll-to-top paging. Async (may read a session file);
+                    // a null page or a throw degrades to a toast on this
+                    // client only — the transcript it already has is untouched.
+                    if (!onFetchHistory) return
+                    void Promise.resolve(
+                        onFetchHistory(msg.path, msg.before, msg.limit)
+                    )
+                        .then(page => {
+                            if (page && ws.readyState === ws.OPEN) sendTo(ws, page)
+                        })
+                        .catch(err =>
+                            sendTo(ws, {
+                                type: 'notify',
+                                message: `History failed: ${(err as Error).message}`,
+                                level: 'error'
+                            })
+                        )
                     return
                 }
                 // type === 'message': ignore while a prompt is pending (composer is

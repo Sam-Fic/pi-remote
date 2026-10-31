@@ -30,6 +30,16 @@ test('isClientMessage accepts the sidebar frames and rejects an empty switch pat
     expect(isClientMessage({type: 'switch_session'})).toBe(false)
 })
 
+test('isClientMessage accepts fetch_history and rejects malformed cursors', () => {
+    // Every field optional: bare frame pages the active session from the newest.
+    expect(isClientMessage({type: 'fetch_history'})).toBe(true)
+    expect(isClientMessage({type: 'fetch_history', path: '/a.jsonl', before: '40', limit: 20})).toBe(true)
+    // A present-but-empty path or a non-string/non-number field is rejected.
+    expect(isClientMessage({type: 'fetch_history', path: ''})).toBe(false)
+    expect(isClientMessage({type: 'fetch_history', before: 42})).toBe(false)
+    expect(isClientMessage({type: 'fetch_history', limit: '20'})).toBe(false)
+})
+
 test('SessionsMessage is part of the ServerMessage union', () => {
     const m: ServerMessage = {
         type: 'sessions',
