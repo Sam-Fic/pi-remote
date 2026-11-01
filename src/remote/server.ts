@@ -152,6 +152,10 @@ export async function startServer(
     getSessions?: () => SessionsMessage | null | Promise<SessionsMessage | null>,
     /** Switch the active session (browser sidebar pick). */
     onSwitchSession?: (path: string) => void,
+    /** Start a brand-new session (Eta's "+"): the /new lifecycle without the
+     *  chat line — the callback owns cancelling pending prompts before the
+     *  replacement session fires session_start. */
+    onNewSession?: () => void,
     /** Delete a persisted session (browser sidebar trash). The callback owns
      *  every check (current-session guard, scan allow-list) and every
      *  consequence (file removal, list refresh, user-facing notice). */
@@ -390,6 +394,12 @@ export async function startServer(
                 }
                 if (msg.type === 'delete_session') {
                     onDeleteSession?.(msg.path)
+                    return
+                }
+                if (msg.type === 'new_session') {
+                    // Eta's "+" with the server's capsule selected. Same lifecycle
+                    // as the remote /new line (the callback cancels pending prompts).
+                    onNewSession?.()
                     return
                 }
                 if (msg.type === 'fetch_history') {

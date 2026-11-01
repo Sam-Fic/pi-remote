@@ -28,6 +28,7 @@ function start(
         undefined,       // getModels
         undefined,       // getSessions
         undefined,       // onSwitchSession
+        undefined,       // onNewSession
         undefined,       // onDeleteSession
         undefined,       // onFetchHistory
         authPolicy       // auth

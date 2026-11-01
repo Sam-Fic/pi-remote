@@ -1,5 +1,5 @@
 import {expect, test} from 'bun:test'
-import {isClientMessage, type ServerMessage, type PromptMessage} from '../../src/remote/protocol.js'
+import {isClientMessage, type ClientMessage, type ServerMessage, type PromptMessage} from '../../src/remote/protocol.js'
 
 test('isClientMessage accepts a prompt_answer with string value', () => {
     expect(isClientMessage({type: 'prompt_answer', id: '1', value: 'hello'})).toBe(true)
@@ -28,6 +28,17 @@ test('isClientMessage accepts the sidebar frames and rejects an empty switch pat
     expect(isClientMessage({type: 'switch_session', path: '/home/me/.pi/s/x.jsonl'})).toBe(true)
     expect(isClientMessage({type: 'switch_session', path: ''})).toBe(false)
     expect(isClientMessage({type: 'switch_session'})).toBe(false)
+})
+
+test('isClientMessage accepts the bare new_session frame (Eta "+")', () => {
+    expect(isClientMessage({type: 'new_session'})).toBe(true)
+    // Lenient like every other bare frame: extra fields are the sender's business.
+    expect(isClientMessage({type: 'new_session', path: '/x.jsonl'})).toBe(true)
+})
+
+test('ClientNewSession is part of the ClientMessage union', () => {
+    const m: ClientMessage = {type: 'new_session'}
+    expect(m.type).toBe('new_session')
 })
 
 test('isClientMessage accepts fetch_history and rejects malformed cursors', () => {

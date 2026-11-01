@@ -277,30 +277,34 @@ export function registerRemote(pi: ExtensionAPI): void {
 
     async function ensureServer(): Promise<ServerHandle> {
         if (S.server) return S.server
+        // The remote /new line and Eta's "+" share one new-session entry. The
+        // reset inside a new session clears the browser's prompt card, so a
+        // parked ask has lost its last surface — cancel pending prompts ONLY
+        // here: session_start also fires for the /task handoff's own
+        // newSession, and cancelling there reads to the planner as the user
+        // skipping a question they never saw.
+        function startNewRemoteSession(): void {
+            cancelPendingPrompts()
+            dispatchRemoteNewSession(newCtx => {
+                S.send = (msg, opts) => {
+                    void (opts ?
+                        newCtx.sendUserMessage(msg, opts)
+                    :   newCtx.sendUserMessage(msg))
+                }
+                // The sidebar's "current" row must follow the session
+                // here too: without a fresh frame the previous
+                // conversation stays marked — and tapping a marked row
+                // is a no-op — while the brand-new session is not in the
+                // scan yet, so nothing else would move the marker.
+                void buildSessionsFrame()
+                    .then(frame => frame && getState().sink(frame))
+                    .catch(() => {})
+            })
+        }
         S.server = await startServer(
             (text, attachments) => {
                 if (text === '/new') {
-                    // The reset inside a new session clears the browser's prompt
-                    // card, so a parked ask has lost its last surface. Only HERE:
-                    // session_start also fires for the /task handoff's own
-                    // newSession, and cancelling there reads to the planner as the
-                    // user skipping a question they never saw.
-                    cancelPendingPrompts()
-                    dispatchRemoteNewSession(newCtx => {
-                        S.send = (msg, opts) => {
-                            void (opts ?
-                                newCtx.sendUserMessage(msg, opts)
-                            :   newCtx.sendUserMessage(msg))
-                        }
-                        // The sidebar's "current" row must follow the session
-                        // here too: without a fresh frame the previous
-                        // conversation stays marked — and tapping a marked row
-                        // is a no-op — while the brand-new session is not in the
-                        // scan yet, so nothing else would move the marker.
-                        void buildSessionsFrame()
-                            .then(frame => frame && getState().sink(frame))
-                            .catch(() => {})
-                    })
+                    startNewRemoteSession()
                     return
                 }
                 // A slash command is text-only by design: /task & co. parse their
@@ -393,6 +397,9 @@ export function registerRemote(pi: ExtensionAPI): void {
                         .then(frame => frame && getState().sink(frame))
                         .catch(() => {})
                 }),
+            // Eta's "+" with the server's capsule selected: the same new-session
+            // lifecycle as the /new line, without a chat line to dispatch.
+            startNewRemoteSession,
             // Sidebar trash → delete the persisted session file. The CURRENT
             // session is deletable too, but only while the agent is idle: a
             // run keeps appending to the file, so unlinking mid-run would

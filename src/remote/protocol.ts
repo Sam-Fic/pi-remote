@@ -213,6 +213,13 @@ export interface ClientSetModel {
 export interface ClientListSessions {
     type: 'list_sessions'
 }
+/** Start a brand-new session (Eta's "+" with the server's capsule selected).
+ *  Same lifecycle as the remote `/new` line: pending prompts are cancelled, the
+ *  replacement session fires session_start (reset + snapshot), and the fresh
+ *  sessions frame marks the new path as `current`. */
+export interface ClientNewSession {
+    type: 'new_session'
+}
 /** Switch the active session (browser sidebar row). */
 export interface ClientSwitchSession {
     type: 'switch_session'
@@ -240,6 +247,7 @@ export type ClientMessage =
     | ClientClearHeld
     | ClientSetModel
     | ClientListSessions
+    | ClientNewSession
     | ClientSwitchSession
     | ClientDeleteSession
     | ClientFetchHistory
@@ -263,6 +271,7 @@ export function isClientMessage(x: unknown): x is ClientMessage {
     }
     if (m.type === 'set_model') return typeof m.spec === 'string' && m.spec.length > 0
     if (m.type === 'list_sessions') return true
+    if (m.type === 'new_session') return true
     if (m.type === 'switch_session') return typeof m.path === 'string' && m.path.length > 0
     if (m.type === 'delete_session') return typeof m.path === 'string' && m.path.length > 0
     if (m.type === 'fetch_history') {
